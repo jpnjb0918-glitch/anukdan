@@ -21,34 +21,42 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      # Optional stable signing key: add repository secrets NYANG_KEYSTORE_B64 and NYANG_KEYSTORE_PASS.
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.NYANG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/nyang.jks"
+            echo "NYANG_KEYSTORE=$RUNNER_TEMP/nyang.jks" >> "$GITHUB_ENV"
+            echo "SIGNED_WITH=release" >> "$GITHUB_ENV"
+          else
+            echo "SIGNED_WITH=debug" >> "$GITHUB_ENV"
+          fi
 
-      - name: Lint (report only)
-        run: ./gradlew --no-daemon lintDebug
-        continue-on-error: true
-
-      - name: Collect APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk nyang-launcher.apk
+      - name: Build APK
+        env:
+          NYANG_KEYSTORE_PASS: ${{ secrets.NYANG_KEYSTORE_PASS }}
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk nyang-launcher.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: nyang-launcher-apk
           path: nyang-launcher.apk
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lint-report
-          path: app/build/reports/lint-results-debug.*
-          if-no-files-found: ignore
-
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v1.0.${{ github.run_number }}"
+          if [ "$SIGNED_WITH" = "release" ]; then
+            NOTE="고정 서명 키로 서명했어요. 이전 버전 위에 그대로 덮어 설치할 수 있어요."
+          else
+            NOTE="임시(디버그) 키로 서명했어요. 다음 버전을 설치하려면 먼저 지워야 할 수 있어요."
+          fi
           gh release create "$TAG" nyang-launcher.apk \
             --title "냥런처 $TAG" \
-            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 nyang-launcher.apk를 내려받아 설치하세요." \
+            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 nyang-launcher.apk를 내려받아 설치하세요. $NOTE" \
             --latest

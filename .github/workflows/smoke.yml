@@ -1,0 +1,58 @@
+name: Emulator smoke test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK + lint
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon lintDebug || true
+          mkdir -p shots
+          cp app/build/reports/lint-results-debug.txt shots/lint.txt || echo "no lint report" > shots/lint.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash .github/scripts/smoke.sh
+
+      - name: Publish screenshots
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -la shots || true
+          gh release delete smoke-test -y --cleanup-tag || true
+          gh release create smoke-test shots/* --prerelease \
+            --title "에뮬레이터 검사 결과 (#${{ github.run_number }})" \
+            --notes "에뮬레이터(Android 14)에서 자동으로 찍은 화면과 로그예요. 커밋 ${GITHUB_SHA::7}."
