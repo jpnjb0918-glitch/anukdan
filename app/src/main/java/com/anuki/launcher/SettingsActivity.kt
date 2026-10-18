@@ -76,7 +76,7 @@ class SettingsActivity : Activity() {
             Dialogs.iconPackChooser(this) { build() }
         }
         switch("모든 앱을 아늑단 아이콘으로", "손으로 그린 아늑단 아이콘(54종)이 없는 앱도 아늑단 틀 아이콘으로 바꿔요 (15,322종, 없으면 원래 아이콘을 틀에 넣어요)", prefs.catPlate) { prefs.catPlate = it }
-        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고양이 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
+        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 아늑단 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
         action("아늑이 런처 앱 아이콘", AppIcon.label(this)) {
             val opts = AppIcon.OPTIONS
             AlertDialog.Builder(this).setTitle("아늑이 런처 앱 아이콘")
@@ -87,7 +87,7 @@ class SettingsActivity : Activity() {
                     build()
                 }.setNegativeButton("취소", null).show()
         }
-        action("배경화면", "고양이 배경 3종 또는 내 사진") { Dialogs.wallpaper(this) }
+        action("배경화면", "아늑단 배경 3종 또는 내 사진") { Dialogs.wallpaper(this) }
 
         section("제스처")
         gesture("위로 쓸기", prefs.gestureUp, prefs.gestureUpApp) { a, k -> prefs.gestureUpApp = k; prefs.gestureUp = a }
@@ -124,7 +124,7 @@ class SettingsActivity : Activity() {
 
         section("정보")
         note("아늑이 런처 1.0 · 노바런처의 기능 구성을 참고해 만든 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
-        action("아이콘 그림 라이선스", "고양이 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
+        action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
     }
@@ -143,7 +143,7 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), 0, 0, 0)
             addView(TextView(context).apply { text = "아늑이 런처"; textSize = 22f; setTypeface(typeface, Typeface.BOLD) })
-            addView(TextView(context).apply { text = "고양이 아이콘 런처"; textSize = 13f; alpha = 0.7f })
+            addView(TextView(context).apply { text = "아늑단 아이콘 런처"; textSize = 13f; alpha = 0.7f })
         })
         list.addView(row)
     }

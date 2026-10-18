@@ -14,7 +14,7 @@ object AppIcon {
         "IconPink" to "핑크",
         "IconGold" to "골드",
         "IconNavy" to "네이비",
-        "IconGlobe" to "지구본 고양이",
+        "IconGlobe" to "지구본 아늑단",
     )
     private const val DEFAULT = "IconTeal"
 

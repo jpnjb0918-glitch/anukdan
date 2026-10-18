@@ -151,7 +151,7 @@ if [ -n "$W" ]; then
   sleep 2
   shot 10-wallpaper-dialog
   dump wp
-  T=$(ui shots/wp.xml text "고양이 패턴")
+  T=$(ui shots/wp.xml text "아늑단 패턴")
   echo "thumb label=$T" >> $LOG
   if [ -n "$T" ]; then
     set -- $T
@@ -226,7 +226,7 @@ adb shell input keyevent KEYCODE_HOME
 sleep 2
 if open_icon_picker "Clock"; then
   shot 16-icon-picker
-  G=$(ui shots/picker.xml find "고양이 아이콘: games")
+  G=$(ui shots/picker.xml find "아늑단 아이콘: games")
   echo "games cell=$G" >> $LOG
   [ -n "$G" ] && adb shell input tap $G
   sleep 2
@@ -263,7 +263,7 @@ if open_icon_picker "Camera"; then
       adb shell input tap $F
       sleep 3
       dump style
-      ST=$(ui shots/style.xml text "고양이 얼굴 틀에 넣기")
+      ST=$(ui shots/style.xml text "아늑단 얼굴 틀에 넣기")
       echo "style=$ST" >> $LOG
       [ -n "$ST" ] && adb shell input tap $ST
       sleep 5
@@ -475,7 +475,7 @@ if [ -n "$IP" ]; then
   adb shell input tap $IP
   sleep 2
   dump packs3
-  CT=$(ui shots/packs3.xml text "고양이 아이콘 (내장)")
+  CT=$(ui shots/packs3.xml text "아늑단 아이콘 (내장)")
   echo "cat icons item=$CT" >> $LOG
   if [ -n "$CT" ]; then
     adb shell input tap $CT
@@ -499,7 +499,7 @@ step "one app: pick a generated cat icon by name"
 adb shell input swipe 540 1500 540 400 200
 sleep 3
 if open_icon_picker "Maps"; then
-  LC=$(ui shots/picker.xml find "아이콘 선택: 더 많은 고양이")
+  LC=$(ui shots/picker.xml find "아이콘 선택: 더 많은 아늑단")
   echo "more cats cell=$LC" >> $LOG
   if [ -n "$LC" ]; then
     adb shell input tap $LC
@@ -507,7 +507,7 @@ if open_icon_picker "Maps"; then
     sleep 1
     dump linegrid
     shot 33-cats-grid
-    grep -o 'text="고양이 아이콘 ([^"]*"' shots/linegrid.xml | head -1 >> $LOG
+    grep -o 'text="아늑단 아이콘 ([^"]*"' shots/linegrid.xml | head -1 >> $LOG
     ET=$(ui shots/linegrid.xml classfirst android.widget.EditText)
     if [ -n "$ET" ]; then
       adb shell input tap $ET
@@ -582,6 +582,9 @@ grep -o "기본판[^\"]*" shots/stdnote.xml | head -1 >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 3
 shot 38-standard-home
+
+# the character is called 아늑단 everywhere on screen now; list any screen dump that still says 고양이
+echo "screens still saying 고양이: $(grep -l "text=\"[^\"]*고양이\|content-desc=\"[^\"]*고양이" shots/*.xml 2>/dev/null | tr '\n' ' ')" >> $LOG
 
 adb logcat -d -b crash > shots/crash.txt
 adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -3000 > shots/logcat.txt

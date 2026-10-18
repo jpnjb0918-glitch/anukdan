@@ -1,6 +1,6 @@
-# 고양이 아이콘 그림 데이터 만들기 (Arcticons → 아늑이 런처)
+# 아늑단 아이콘 그림 데이터 만들기 (Arcticons → 아늑이 런처)
 
-`app/src/main/assets/linecons/`는 손으로 그린 54종이 없는 앱에 쓰는 고양이 아이콘의 안쪽 그림이에요. [Arcticons](https://github.com/Arcticons-Team/Arcticons)(Donnnno와 기여자들, **CC BY-SA 4.0**)의 흰 선 SVG 아이콘을 런처가 바로 그릴 수 있는 경로 데이터로 바꾼 거예요. 이 폴더의 데이터는 원작과 같은 CC BY-SA 4.0이에요. 출처와 바꾼 점은 `NOTICE.txt`에 있어요.
+`app/src/main/assets/linecons/`는 손으로 그린 54종이 없는 앱에 쓰는 아늑단 아이콘의 안쪽 그림이에요. [Arcticons](https://github.com/Arcticons-Team/Arcticons)(Donnnno와 기여자들, **CC BY-SA 4.0**)의 흰 선 SVG 아이콘을 런처가 바로 그릴 수 있는 경로 데이터로 바꾼 거예요. 이 폴더의 데이터는 원작과 같은 CC BY-SA 4.0이에요. 출처와 바꾼 점은 `NOTICE.txt`에 있어요.
 
 | 파일 | 내용 |
 |---|---|
@@ -20,7 +20,7 @@ python3 tools/linecons/verify.py /tmp/arcticons/icons/white app/src/main/assets/
 
 `NOTICE.txt`의 커밋 번호도 같이 바꿔 주세요.
 
-고양이 틀(`app/src/main/assets/catfmt/`: 뒤에서 내다보는 고양이 + 타일 4색 + 앞발)은 고양이 아이콘 팩 그림 코드(`tools/catfmt/pack.py`, `gen.py`)로 만들어요. 이건 Arcticons와 상관없는 우리 그림이에요.
+아늑단 틀(`app/src/main/assets/catfmt/`: 뒤에서 내다보는 아늑단 + 타일 4색 + 앞발)은 아늑단 아이콘 팩 그림 코드(`tools/catfmt/pack.py`, `gen.py`)로 만들어요. 이건 Arcticons와 상관없는 우리 그림이에요.
 
 ```bash
 pip install cairosvg pillow
