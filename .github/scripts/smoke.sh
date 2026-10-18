@@ -585,6 +585,7 @@ shot 38-standard-home
 
 # the character is called 아늑단 everywhere on screen now; list any screen dump that still says 고양이
 echo "screens still saying 고양이: $(grep -l "text=\"[^\"]*고양이\|content-desc=\"[^\"]*고양이" shots/*.xml 2>/dev/null | tr '\n' ' ')" >> $LOG
+echo "screens mentioning 노바런처: $(grep -l "text=\"[^\"]*노바" shots/*.xml 2>/dev/null | tr '\n' ' ')" >> $LOG
 
 adb logcat -d -b crash > shots/crash.txt
 adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -3000 > shots/logcat.txt

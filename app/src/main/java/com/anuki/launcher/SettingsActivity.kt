@@ -123,7 +123,7 @@ class SettingsActivity : Activity() {
         }
 
         section("정보")
-        note("아늑이 런처 1.0 · 노바런처의 기능 구성을 참고해 만든 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
+        note("아늑이 런처 1.0 · 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
         action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
