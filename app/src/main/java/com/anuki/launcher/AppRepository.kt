@@ -46,13 +46,17 @@ class AppRepository(private val ctx: Context) {
 
     private val callback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String?, user: UserHandle?) {
-            if (packageName != null) removedPackages += packageName
+            if (packageName != null) { removedPackages += packageName; IconPacks.forget(packageName) }
             reload()
         }
-        override fun onPackageAdded(packageName: String?, user: UserHandle?) = reload()
-        override fun onPackageChanged(packageName: String?, user: UserHandle?) = reload()
-        override fun onPackagesAvailable(packageNames: Array<out String>?, user: UserHandle?, replacing: Boolean) = reload()
-        override fun onPackagesUnavailable(packageNames: Array<out String>?, user: UserHandle?, replacing: Boolean) = reload()
+        override fun onPackageAdded(packageName: String?, user: UserHandle?) { packageName?.let { IconPacks.forget(it) }; reload() }
+        override fun onPackageChanged(packageName: String?, user: UserHandle?) { packageName?.let { IconPacks.forget(it) }; reload() }
+        override fun onPackagesAvailable(packageNames: Array<out String>?, user: UserHandle?, replacing: Boolean) {
+            packageNames?.forEach { IconPacks.forget(it) }; reload()
+        }
+        override fun onPackagesUnavailable(packageNames: Array<out String>?, user: UserHandle?, replacing: Boolean) {
+            packageNames?.forEach { IconPacks.forget(it) }; reload()
+        }
     }
 
     init {
@@ -75,6 +79,8 @@ class AppRepository(private val ctx: Context) {
                 }
             }
             list.sortWith { a, b -> collator.compare(a.label, b.label) }
+            val mode = LauncherApp.instance.icons.mode()
+            if (mode != "builtin" && mode != "none") IconPacks.get(ctx, mode)
             main.post {
                 all = list
                 byKey = list.associateBy { it.key }

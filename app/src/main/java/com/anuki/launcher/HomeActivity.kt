@@ -7,9 +7,11 @@ import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.app.role.RoleManager
 import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -65,6 +67,14 @@ class HomeActivity : Activity(), PagedView.Listener {
     private val appsListener: () -> Unit = { onAppsChanged() }
     private val badgeListener: () -> Unit = { updateBadges() }
 
+    /** Midnight, a manual clock change or a new time zone can change the day shown by date (calendar) icons. */
+    private val dateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            LauncherApp.dlog("time broadcast ${intent?.action}")
+            if (apps.loaded && icons.checkDate()) bindAll()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setupWindow()
@@ -76,9 +86,17 @@ class HomeActivity : Activity(), PagedView.Listener {
         apps.addListener(appsListener)
         Badges.listeners += badgeListener
         if (apps.loaded) onAppsChanged() // otherwise the listener fires when loading finishes
+        val f = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        // these are protected broadcasts only the system can send
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(dateReceiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(dateReceiver, f)
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(dateReceiver) } catch (_: Exception) { }
         apps.removeListener(appsListener)
         Badges.listeners -= badgeListener
         super.onDestroy()
@@ -98,6 +116,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         super.onResume()
         if (apps.loaded && prefs.version != boundVersion) {
             icons.invalidate()
+            bindAll()
+        } else if (apps.loaded && icons.checkDate()) {
             bindAll()
         }
     }

@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- fallback for apps the pack doesn't cover: shrink, cut a round bite (mask), put on the back, draw the dot on top -->
     <iconback img1="pack_back" />
+    <iconmask img1="pack_mask" />
+    <iconupon img1="pack_upon" />
     <scale factor="0.6" />
     <item component="ComponentInfo{com.android.chrome/com.google.android.apps.chrome.Main}" drawable="pack_blue" />
     <item component="ComponentInfo{com.android.settings/com.android.settings.Settings}" drawable="pack_green" />
     <item component="ComponentInfo{com.google.android.deskclock/com.android.deskclock.DeskClock}" drawable="pack_red" />
+    <!-- date icons: calendar_1 .. calendar_31 (the launcher picks today's) -->
+    <calendar component="ComponentInfo{com.google.android.calendar/com.android.calendar.AllInOneActivity}" prefix="calendar_" />
+    <calendar component="ComponentInfo{com.google.android.calendar/com.android.calendar.LaunchActivity}" prefix="calendar_" />
+    <calendar component="ComponentInfo{com.android.calendar/com.android.calendar.AllInOneActivity}" prefix="calendar_" />
 </resources>

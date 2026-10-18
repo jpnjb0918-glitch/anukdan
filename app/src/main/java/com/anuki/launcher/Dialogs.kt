@@ -192,13 +192,28 @@ object Dialogs {
         }
     }
 
+    /** Runs [work] off the main thread behind a small "loading" dialog (big packs take a moment to read). */
+    private fun <T> loading(a: Activity, work: () -> T?, then: (T?) -> Unit) {
+        val d = AlertDialog.Builder(a).setMessage("아이콘 팩 불러오는 중…").setCancelable(false).show()
+        Thread {
+            val r = try { work() } catch (_: Exception) { null }
+            a.runOnUiThread {
+                try { d.dismiss() } catch (_: Exception) { }
+                if (!a.isFinishing && !a.isDestroyed) then(r)
+            }
+        }.start()
+    }
+
     private fun packIconGrid(a: Activity, app: AppEntry, info: IconPackInfo, onDone: () -> Unit) {
-        val pack = IconPacks.get(a, info.packageName)
-        if (pack == null) {
-            Toast.makeText(a, "아이콘 팩을 읽을 수 없어요", Toast.LENGTH_SHORT).show()
-            return
+        loading(a, {
+            IconPacks.get(a, info.packageName)?.let { it to it.allIconNames() }
+        }) { r ->
+            if (r == null) Toast.makeText(a, "아이콘 팩을 읽을 수 없어요", Toast.LENGTH_SHORT).show()
+            else showPackGrid(a, app, info, r.first, r.second, onDone)
         }
-        val all = pack.allIconNames()
+    }
+
+    private fun showPackGrid(a: Activity, app: AppEntry, info: IconPackInfo, pack: ExternalIconPack, all: List<String>, onDone: () -> Unit) {
         var shown = all
         val density = a.resources.displayMetrics.densityDpi
         val size = a.dp(48f)
@@ -267,10 +282,15 @@ object Dialogs {
         AlertDialog.Builder(a).setTitle(if (packs.isEmpty()) "아이콘 팩 (설치된 외부 팩 없음)" else "아이콘 팩")
             .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { d, which ->
                 d.dismiss()
-                prefs.catIcons = true
-                prefs.iconPack = values[which]
-                LauncherApp.instance.icons.invalidate()
-                onDone()
+                val v = values[which]
+                val commit = {
+                    prefs.catIcons = true
+                    prefs.iconPack = v
+                    LauncherApp.instance.icons.invalidate()
+                    onDone()
+                }
+                if (v == "builtin" || v == "none" || IconPacks.isLoaded(v)) commit()
+                else loading(a, { IconPacks.get(a, v) }) { commit() }
             }
             .setNegativeButton("취소", null).show()
     }

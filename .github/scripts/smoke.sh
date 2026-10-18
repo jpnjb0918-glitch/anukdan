@@ -37,10 +37,16 @@ step() { echo "== $*" >> $LOG; }
 
 adb install -r "$APK" | tee -a $LOG
 adb install -r testiconpack/build/outputs/apk/debug/testiconpack-debug.apk | tee -a $LOG
+# a real, published icon pack (downloaded by the workflow), if the download worked
+REALPACK=realpack/arcticons.apk
+if [ -s "$REALPACK" ]; then adb install -r "$REALPACK" 2>&1 | tee -a $LOG; else echo "no real icon pack apk" >> $LOG; fi
+adb shell cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER > shots/components.txt 2>&1
+echo "emulator date: $(adb shell date)" >> $LOG
 # the stock launcher tends to ANR on CI emulators and covers the screen; switch it off
 adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher 2>&1 | tee -a $LOG
 adb shell cmd role add-role-holder --user 0 android.app.role.HOME com.anuki.launcher 2>&1 | tee -a $LOG
 adb shell cmd role get-role-holders --user 0 android.app.role.HOME 2>&1 | tee -a $LOG
+adb logcat -G 16M
 adb logcat -c
 adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME | tee -a $LOG
 sleep 15
@@ -310,6 +316,12 @@ if open_icon_picker "Chrome"; then
   echo "pack cell=$PC" >> $LOG
   if [ -n "$PC" ]; then
     adb shell input tap $PC
+    sleep 2
+    # with more than one pack installed a list comes first
+    dump packlist
+    TL=$(ui shots/packlist.xml text "시험용 아이콘 팩")
+    echo "pack list item=$TL" >> $LOG
+    [ -n "$TL" ] && adb shell input tap $TL
     sleep 3
     dump packgrid
     STAR=$(ui shots/packgrid.xml anydesc pack_star)
@@ -320,6 +332,117 @@ if open_icon_picker "Chrome"; then
   shot 22-pack-icon-one-app
 fi
 adb logcat -d | grep -E "icon override|app icon ->" >> $LOG
+adb logcat -d | grep -E "icon pack |calendar icon" >> $LOG
+
+step "next day: the calendar icon follows the date"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+CAL_BEFORE=$(adb shell date +%d | tr -d '\r')
+NOW=$(adb shell date +%s | tr -d '\r')
+adb shell settings put global auto_time 0
+adb shell cmd alarm set-time $(( (NOW + 86400) * 1000 )) 2>&1 | tee -a $LOG
+sleep 3
+CAL_AFTER=$(adb shell date +%d | tr -d '\r')
+if [ "$CAL_AFTER" = "$CAL_BEFORE" ]; then
+  echo "cmd alarm set-time did not move the clock, trying su date" >> $LOG
+  adb shell su 0 date -u "$(date -u -d @$((NOW + 86400)) +%m%d%H%M%Y.%S)" 2>&1 | tee -a $LOG
+  sleep 3
+  CAL_AFTER=$(adb shell date +%d | tr -d '\r')
+fi
+echo "day before=$CAL_BEFORE after=$CAL_AFTER ($(adb shell date))" >> $LOG
+sleep 3
+shot 23-next-day-home
+adb shell input swipe 540 1500 540 400 200
+sleep 3
+shot 24-next-day-drawer
+adb shell input keyevent KEYCODE_HOME
+adb logcat -d | grep -E "time broadcast|calendar icon" >> $LOG
+# put the clock back
+NOW2=$(adb shell date +%s | tr -d '\r')
+adb shell cmd alarm set-time $(( (NOW2 - 86400) * 1000 )) 2>&1 | tee -a $LOG
+[ "$(adb shell date +%d | tr -d '\r')" = "$CAL_AFTER" ] && adb shell su 0 date -u "$(date -u -d @$((NOW2 - 86400)) +%m%d%H%M%Y.%S)" >/dev/null 2>&1
+adb shell settings put global auto_time 1
+echo "clock restored: $(adb shell date)" >> $LOG
+sleep 2
+
+step "real icon pack (Arcticons, F-Droid)"
+if adb shell pm list packages | grep -q com.donnnno.arcticons; then
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  IP=$(find_scroll "아이콘 팩")
+  if [ -n "$IP" ]; then
+    adb shell input tap $IP
+    sleep 2
+    dump packs2
+    RP=$(ui shots/packs2.xml textprefix "Arcticons")
+    echo "real pack item=$RP" >> $LOG
+    if [ -n "$RP" ]; then
+      T0=$(date +%s)
+      adb shell input tap $RP
+      for i in $(seq 1 30); do
+        sleep 1
+        dump wait
+        grep -q "아이콘 팩 불러오는 중" shots/wait.xml || break
+      done
+      echo "real pack applied after ~$(( $(date +%s) - T0 ))s (loading dialog gone)" >> $LOG
+    fi
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 4
+  shot 25-realpack-home
+  adb shell input swipe 540 1500 540 400 200
+  sleep 4
+  shot 26-realpack-drawer
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  if open_icon_picker "Photos"; then
+    PC=$(ui shots/picker.xml find "아이콘 선택: 아이콘 팩")
+    if [ -n "$PC" ]; then
+      adb shell input tap $PC
+      sleep 2
+      dump packlist2
+      RL=$(ui shots/packlist2.xml textprefix "Arcticons")
+      echo "real pack list item=$RL" >> $LOG
+      if [ -n "$RL" ]; then
+        T0=$(date +%s)
+        adb shell input tap $RL
+        for i in $(seq 1 40); do
+          sleep 1
+          dump realgrid
+          grep -q "아이콘 팩 불러오는 중" shots/realgrid.xml || break
+        done
+        echo "real pack icon list shown after ~$(( $(date +%s) - T0 ))s" >> $LOG
+        sleep 2
+        dump realgrid
+        shot 27-realpack-grid
+        grep -o 'text="Arcticons[^"]*"' shots/realgrid.xml | head -2 >> $LOG
+        echo "grid cells on screen: $(ui shots/realgrid.xml count android.widget.ImageView)" >> $LOG
+        ET=$(ui shots/realgrid.xml classfirst android.widget.EditText)
+        if [ -n "$ET" ]; then
+          adb shell input tap $ET
+          sleep 1
+          adb shell input text "photo"
+          sleep 3
+          # hide the keyboard (only if it is up, BACK would otherwise close the dialog)
+          adb shell dumpsys input_method | grep -q "mInputShown=true" && adb shell input keyevent KEYCODE_BACK
+          sleep 1
+          dump realgrid2
+          shot 28-realpack-search
+          PI=$(ui shots/realgrid2.xml desccontains "photo")
+          echo "first 'photo' icon=$PI" >> $LOG
+          [ -n "$PI" ] && adb shell input tap $PI
+          sleep 3
+        fi
+      fi
+    fi
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    shot 29-realpack-one-icon
+  fi
+  adb logcat -d | grep -E "icon pack |icon override" | tail -20 >> $LOG
+else
+  echo "real icon pack not installed - skipped" >> $LOG
+fi
 
 step "settings"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG
@@ -337,7 +460,10 @@ sleep 2
 shot 15-page-swipe
 
 adb logcat -d -b crash > shots/crash.txt
-adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -300 > shots/logcat.txt
-adb shell pidof com.anuki.launcher > shots/pid.txt || echo "not running" > shots/pid.txt
+adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -3000 > shots/logcat.txt
+adb logcat -d | grep -E "ANR in" > shots/anr.txt
+PID=$(adb shell pidof com.anuki.launcher | tr -d '\r')
+echo "${PID:-not running}" > shots/pid.txt
+[ -n "$PID" ] && adb logcat -d --pid=$PID | grep -E "Skipped [0-9]+ frames|Davey" > shots/jank.txt
 echo "done" >> $LOG
 exit 0

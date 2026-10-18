@@ -29,6 +29,38 @@ jobs:
           mkdir -p shots
           cp app/build/reports/lint-results-debug.txt shots/lint.txt || echo "no lint report" > shots/lint.txt
 
+      # A real, published icon pack to try alongside the home-made test pack.
+      # Arcticons (GPL-3.0) from F-Droid; the launcher must read it the way Nova/ADW do.
+      - name: Get a real icon pack (Arcticons from F-Droid)
+        continue-on-error: true
+        run: |
+          mkdir -p shots realpack
+          URL=https://f-droid.org/repo/com.donnnno.arcticons_1570.apk
+          if ! curl -fsSL --retry 3 -o realpack/arcticons.apk "$URL"; then
+            VC=$(curl -fsSL https://f-droid.org/api/v1/packages/com.donnnno.arcticons | python3 -c 'import json,sys; print(json.load(sys.stdin)["suggestedVersionCode"])')
+            curl -fsSL --retry 3 -o realpack/arcticons.apk "https://f-droid.org/repo/com.donnnno.arcticons_${VC}.apk"
+          fi
+          ls -la realpack
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "$BT/aapt2" dump badging realpack/arcticons.apk | grep -E "^package|application-label:|sdkVersion" > shots/realpack-badging.txt || true
+          # reference numbers straight from the APK, to compare with what the launcher reads
+          unzip -l realpack/arcticons.apk | grep -iE "appfilter|drawable\.xml" > shots/realpack-files.txt || true
+          "$BT/aapt2" dump resources realpack/arcticons.apk | grep -A3 -E " (xml|raw)/(appfilter|drawable)$" > shots/realpack-xmlres.txt || true
+          # same lookup order as the launcher: res/xml, then res/raw, then assets
+          for name in appfilter drawable; do
+            F=$(grep -A3 -E " xml/$name$" shots/realpack-xmlres.txt | grep -oE "res/[^ ]+" | head -1)
+            R=$(grep -A3 -E " raw/$name$" shots/realpack-xmlres.txt | grep -oE "res/[^ ]+" | head -1)
+            if [ -n "$F" ]; then
+              "$BT/aapt2" dump xmltree --file "$F" realpack/arcticons.apk > "realpack/$name-tree.txt" 2>&1 || true
+            elif [ -n "$R" ]; then
+              unzip -p realpack/arcticons.apk "$R" > "realpack/$name-assets.xml" 2>/dev/null || true
+            else
+              unzip -p realpack/arcticons.apk "assets/$name.xml" > "realpack/$name-assets.xml" 2>/dev/null || true
+            fi
+          done
+          python3 .github/scripts/packref.py realpack > shots/realpack-reference.txt || true
+          cat shots/realpack-badging.txt shots/realpack-files.txt shots/realpack-reference.txt | head -40
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

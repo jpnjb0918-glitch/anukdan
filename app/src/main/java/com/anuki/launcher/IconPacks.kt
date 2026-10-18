@@ -37,7 +37,10 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
     private val ids = HashMap<String, Int>()
 
     init {
+        val t0 = System.currentTimeMillis()
         parseAppFilter()
+        LauncherApp.dlog("icon pack $packageName: items=${map.size} calendars=${calendars.size} backs=${backs.size} " +
+            "mask=$mask upon=$upon scale=$scale (${System.currentTimeMillis() - t0}ms)")
     }
 
     val hasFallback: Boolean get() = backs.isNotEmpty() || mask != null || upon != null
@@ -109,14 +112,28 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
     /** Icon the pack defines for this activity (calendar icons follow today's date). */
     fun iconFor(c: ComponentName, density: Int): Drawable? {
         calendars[c]?.let { prefix ->
-            drawable(prefix + Calendar.getInstance().get(Calendar.DAY_OF_MONTH), density)?.let { return it }
+            val name = prefix + Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
+            drawable(name, density)?.let {
+                LauncherApp.dlog("calendar icon ${c.flattenToShortString()} -> $name")
+                return it
+            }
         }
         val name = map[c] ?: return null
         return drawable(name, density)
     }
 
-    /** Every icon name in the pack: drawable.xml if present, otherwise everything appfilter points at. */
-    fun allIconNames(): List<String> {
+    /** True when the pack has a date icon set for this activity. */
+    fun hasCalendar(c: ComponentName) = c in calendars
+
+    private var names: List<String>? = null
+
+    /** Every icon name in the pack: drawable.xml if present, otherwise everything appfilter points at. Slow for big packs. */
+    fun allIconNames(): List<String> = synchronized(this) {
+        names ?: loadIconNames().also { names = it }
+    }
+
+    private fun loadIconNames(): List<String> {
+        val t0 = System.currentTimeMillis()
         val out = LinkedHashSet<String>()
         openXml("drawable")?.let { p ->
             try {
@@ -129,7 +146,9 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
             }
         }
         if (out.isEmpty()) out += map.values
-        return out.filter { drawableId(it) != 0 }
+        val list = out.filter { drawableId(it) != 0 }
+        LauncherApp.dlog("icon pack $packageName: ${list.size} icons listed (${System.currentTimeMillis() - t0}ms)")
+        return list
     }
 
     /** Pack-styled icon for an app the pack doesn't cover (classic iconback / iconmask / iconupon recipe). */
@@ -203,5 +222,8 @@ object IconPacks {
         }
     }
 
-    fun forget() = synchronized(loaded) { loaded.clear() }
+    /** Drops the parsed pack so an updated or removed pack is read again. */
+    fun forget(pkg: String) = synchronized(loaded) { loaded.remove(pkg) }
+
+    fun isLoaded(pkg: String) = synchronized(loaded) { loaded.containsKey(pkg) }
 }

@@ -45,6 +45,24 @@ elif mode == 'descprefix':
         if (n.get('content-desc') or '').startswith(sys.argv[3]):
             print(*center(n))
             break
+elif mode == 'textprefix':
+    for n in ET.parse(path).iter('node'):
+        if (n.get('text') or '').startswith(sys.argv[3]):
+            print(*center(n))
+            break
+elif mode == 'desccontains':
+    for n in ET.parse(path).iter('node'):
+        if sys.argv[3] in (n.get('content-desc') or ''):
+            print(*center(n))
+            break
+elif mode == 'classfirst':
+    for n in ET.parse(path).iter('node'):
+        if n.get('class') == sys.argv[3]:
+            print(*center(n))
+            break
+elif mode == 'count':
+    # number of nodes of a class, e.g. icon cells in a grid
+    print(sum(1 for n in ET.parse(path).iter('node') if n.get('class') == sys.argv[3]))
 elif mode == 'index':
     i = int(sys.argv[3])
     if i < len(nodes):

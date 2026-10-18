@@ -18,6 +18,7 @@ import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.LruCache
+import java.util.Calendar
 
 /**
  * Cat icon pack.
@@ -42,7 +43,20 @@ class IconProvider(private val ctx: Context) {
         }
     }
 
-    fun invalidate() = cache.evictAll()
+    fun invalidate() {
+        cacheDay = today()
+        cache.evictAll()
+    }
+
+    private var cacheDay = today()
+    private fun today(): Int = Calendar.getInstance().let { it.get(Calendar.YEAR) * 1000 + it.get(Calendar.DAY_OF_YEAR) }
+
+    /** Date icons from icon packs go stale at midnight; drops the cache when the day changed. Returns true if it did. */
+    fun checkDate(): Boolean {
+        if (today() == cacheDay) return false
+        invalidate()
+        return true
+    }
 
     fun onAppsChanged(apps: List<AppEntry>) {
         rebuildAutoMap(apps)
@@ -146,9 +160,14 @@ class IconProvider(private val ctx: Context) {
             else -> {
                 val pack = IconPacks.get(ctx, m)
                 val d = pack?.iconFor(app.component, density)
-                if (d != null) drawableToBitmap(d, size) else {
+                if (d != null) {
+                    LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> pack")
+                    drawableToBitmap(d, size)
+                } else {
                     val orig = originalIcon(app, size)
-                    pack?.compose(orig, size, app.key.hashCode(), density) ?: orig
+                    val composed = pack?.compose(orig, size, app.key.hashCode(), density)
+                    LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> " + if (composed != null) "composed" else "original")
+                    composed ?: orig
                 }
             }
         }
