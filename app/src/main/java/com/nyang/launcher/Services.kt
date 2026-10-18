@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.UserManager
 import android.provider.Settings
+import android.util.Log
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.view.HapticFeedbackConstants
@@ -58,6 +59,7 @@ class BadgeService : NotificationListenerService() {
             val k = s.packageName + "#" + um.getSerialNumberForUser(s.user)
             m[k] = (m[k] ?: 0) + 1
         }
+        Log.d("Nyang", "badges $m")
         Badges.update(m)
     }
 }

@@ -16,16 +16,23 @@ adb shell cmd role add-role-holder --user 0 android.app.role.HOME com.nyang.laun
 adb shell cmd role get-role-holders --user 0 android.app.role.HOME 2>&1 | tee -a $LOG
 adb logcat -c
 adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME | tee -a $LOG
-sleep 10
+sleep 15
+adb shell input keyevent KEYCODE_HOME
+sleep 4
 shot 01-home
 dump home
 step "home icons"; ui shots/home.xml list >> $LOG
 
 step "drawer"
-adb shell input swipe 540 1500 540 400 200
-sleep 3
+for try in 1 2 3; do
+  adb shell input swipe 540 1500 540 400 200
+  sleep 3
+  dump drawer
+  if grep -q "앱 검색" shots/drawer.xml; then echo "drawer open (try $try)" >> $LOG; break; fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+done
 shot 02-drawer
-dump drawer
 ui shots/drawer.xml list | head -40 >> $LOG
 adb shell input tap 540 215
 sleep 1
@@ -138,6 +145,39 @@ if [ -n "$WG" ]; then
   adb shell input keyevent KEYCODE_BACK
 fi
 sleep 1
+
+step "add analog clock widget"
+adb shell input swipe 540 700 540 700 1500
+sleep 1
+dump menu4
+WG=$(ui shots/menu4.xml text "위젯 추가")
+if [ -n "$WG" ]; then
+  adb shell input tap $WG
+  sleep 3
+  dump picker
+  AN=$(ui shots/picker.xml text "Analog")
+  echo "analog=$AN" >> $LOG
+  if [ -n "$AN" ]; then
+    adb shell input tap $AN
+    sleep 3
+    shot 12b-bind-dialog
+    dump bind
+    for label in "Create" "만들기" "Allow" "허용"; do
+      B=$(ui shots/bind.xml text "$label")
+      if [ -n "$B" ]; then echo "bind button=$label $B" >> $LOG; adb shell input tap $B; break; fi
+    done
+    sleep 4
+    shot 12c-widget-added
+  fi
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 1
+
+step "badges"
+adb shell cmd notification allow_listener com.nyang.launcher/com.nyang.launcher.BadgeService 2>&1 | tee -a $LOG
+sleep 2
+adb shell cmd notification post -S bigtext -t "냥" smoke_test "배지 확인용 알림" 2>&1 | tee -a $LOG
+sleep 3
 
 step "settings"
 adb shell am start -W -n com.nyang.launcher/.SettingsActivity | tee -a $LOG
