@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.UserHandle
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -478,6 +479,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     // ------------------------------------------------------------ long press / popup / drag
 
     private fun onItemLongPress(view: View, item: HomeItem?, app: AppEntry?, source: Int, rawX: Float, rawY: Float) {
+        Log.d(TAG, "longPress source=$source item=${item?.id} app=${app?.label} active=${drag.isActive}")
         if (drag.isActive) return
         val entryApp = app ?: item?.takeIf { it.type == HomeItem.TYPE_APP }?.let { apps.find(it.key) }
         drag.startPending(DragInfo(source, item, entryApp, view), rawX, rawY)
@@ -567,11 +569,13 @@ class HomeActivity : Activity(), PagedView.Listener {
         })
         dragLayer.addView(holder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         popup = holder
+        Log.d(TAG, "showPopup entries=${entries.size} at $x,$y size=${cw}x$ch")
         card.alpha = 0f; card.scaleX = 0.92f; card.scaleY = 0.92f
         card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).start()
     }
 
     fun closePopup() {
+        if (popup != null) Log.d(TAG, "closePopup", Exception("closed from"))
         popup?.let { dragLayer.removeView(it) }
         popup = null
     }
@@ -698,6 +702,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     companion object {
+        const val TAG = "Nyang"
         const val REQ_PICK_WIDGET = 11
         const val REQ_BIND_WIDGET = 12
         const val REQ_CONFIG_WIDGET = 13
