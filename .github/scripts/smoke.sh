@@ -167,7 +167,14 @@ if [ -n "$WG" ]; then
       if [ -n "$B" ]; then echo "bind button=$label $B" >> $LOG; adb shell input tap $B; break; fi
     done
     sleep 4
+    dump cfg
+    FACE=$(ui shots/cfg.xml text "Scallop")
+    echo "clock face=$FACE" >> $LOG
+    [ -n "$FACE" ] && adb shell input tap $FACE
+    sleep 4
     shot 12c-widget-added
+    dump afterwidget
+    grep -o 'package="com.google.android.deskclock"' shots/afterwidget.xml | head -1 >> $LOG
   fi
 fi
 adb shell input keyevent KEYCODE_HOME

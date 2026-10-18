@@ -59,7 +59,7 @@ class BadgeService : NotificationListenerService() {
             val k = s.packageName + "#" + um.getSerialNumberForUser(s.user)
             m[k] = (m[k] ?: 0) + 1
         }
-        Log.d("Nyang", "badges $m")
+        Log.d("Nyang", "badge counts updated: ${m.size} apps")
         Badges.update(m)
     }
 }

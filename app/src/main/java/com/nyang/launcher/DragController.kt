@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -60,7 +59,6 @@ class DragController(private val act: HomeActivity) {
     }
 
     fun onTouch(ev: MotionEvent) {
-        if (ev.actionMasked != MotionEvent.ACTION_MOVE) Log.d("Nyang", "drag.onTouch action=${ev.actionMasked} state=$state")
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> if (state == State.PENDING) { state = State.IDLE; info = null }
             MotionEvent.ACTION_MOVE -> {
