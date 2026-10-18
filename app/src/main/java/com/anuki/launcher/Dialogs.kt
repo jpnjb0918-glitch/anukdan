@@ -254,6 +254,10 @@ object Dialogs {
         })
         var dialog: AlertDialog? = null
         grid.setOnItemClickListener { _, _, position, _ ->
+            if (pack.drawableId(shown[position]) == 0) {
+                Toast.makeText(a, "이 아이콘은 팩 안에 그림이 없어요", Toast.LENGTH_SHORT).show()
+                return@setOnItemClickListener
+            }
             LauncherApp.instance.prefs.setIconOverride(app.key, IconProvider.PACK + info.packageName + ":" + shown[position])
             LauncherApp.instance.icons.invalidate()
             dialog?.dismiss()

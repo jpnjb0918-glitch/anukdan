@@ -187,8 +187,8 @@ WG=$(ui shots/menu4.xml text "위젯 추가")
 if [ -n "$WG" ]; then
   adb shell input tap $WG
   sleep 3
-  dump picker
-  AN=$(ui shots/picker.xml text "Analog")
+  # other apps' widgets (e.g. the icon pack's) can push it below the fold
+  AN=$(find_scroll "Analog")
   echo "analog=$AN" >> $LOG
   if [ -n "$AN" ]; then
     adb shell input tap $AN
@@ -440,6 +440,27 @@ if adb shell pm list packages | grep -q com.donnnno.arcticons; then
     shot 29-realpack-one-icon
   fi
   adb logcat -d | grep -E "icon pack |icon override" | tail -20 >> $LOG
+
+  # Arcticons draws white lines: on the light drawer they almost vanish, the dark drawer theme is the fix
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  TH=$(find_scroll "테마 (앱 서랍·폴더)")
+  echo "theme row=$TH" >> $LOG
+  if [ -n "$TH" ]; then
+    adb shell input tap $TH
+    sleep 2
+    dump theme
+    DK=$(ui shots/theme.xml text "어둡게")
+    [ -n "$DK" ] && adb shell input tap $DK
+    sleep 2
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb shell input swipe 540 1500 540 400 200
+  sleep 4
+  shot 30-realpack-dark-drawer
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
 else
   echo "real icon pack not installed - skipped" >> $LOG
 fi

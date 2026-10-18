@@ -64,7 +64,8 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
 
     private fun parseComponent(s: String?): ComponentName? {
         if (s == null || !s.startsWith("ComponentInfo{") || !s.endsWith("}")) return null
-        return ComponentName.unflattenFromString(s.substring(14, s.length - 1))
+        // some packs have stray spaces inside the braces
+        return ComponentName.unflattenFromString(s.substring(14, s.length - 1).trim())
     }
 
     private fun parseAppFilter() {
@@ -127,7 +128,11 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
 
     private var names: List<String>? = null
 
-    /** Every icon name in the pack: drawable.xml if present, otherwise everything appfilter points at. Slow for big packs. */
+    /**
+     * Every icon name in the pack: drawable.xml if present, otherwise everything appfilter points at.
+     * Names are not checked against the pack's resources here (that took ~10 s for a 15,000-icon pack);
+     * the picker checks the one the user taps.
+     */
     fun allIconNames(): List<String> = synchronized(this) {
         names ?: loadIconNames().also { names = it }
     }
@@ -146,7 +151,7 @@ class ExternalIconPack(ctx: Context, val packageName: String) {
             }
         }
         if (out.isEmpty()) out += map.values
-        val list = out.filter { drawableId(it) != 0 }
+        val list = out.toList()
         LauncherApp.dlog("icon pack $packageName: ${list.size} icons listed (${System.currentTimeMillis() - t0}ms)")
         return list
     }
