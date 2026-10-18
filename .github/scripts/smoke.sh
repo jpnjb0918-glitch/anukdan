@@ -7,9 +7,36 @@ APK=app/build/outputs/apk/debug/app-debug.apk
 shot() { adb exec-out screencap -p > "shots/$1.png"; }
 dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "shots/$1.xml" >/dev/null 2>&1; }
 ui() { python3 .github/scripts/ui.py "$@"; }
+# long-press the app with this label (home or drawer) and pick "아이콘 바꾸기"
+open_icon_picker() {
+  dump lp
+  local P=$(ui shots/lp.xml find "$1")
+  [ -z "$P" ] && { echo "no icon $1" >> $LOG; return 1; }
+  adb shell input swipe $P $P 1500
+  sleep 1
+  dump lpmenu
+  local M=$(ui shots/lpmenu.xml text "아이콘 바꾸기")
+  [ -z "$M" ] && { echo "no menu for $1" >> $LOG; return 1; }
+  adb shell input tap $M
+  sleep 2
+  dump picker
+  return 0
+}
+# scroll the current screen until a text shows up, print its centre
+find_scroll() {
+  for i in 1 2 3 4 5 6 7 8; do
+    dump fs
+    local P=$(ui shots/fs.xml text "$1")
+    if [ -n "$P" ]; then echo "$P"; return 0; fi
+    adb shell input swipe 540 1800 540 900 300
+    sleep 1
+  done
+  return 1
+}
 step() { echo "== $*" >> $LOG; }
 
 adb install -r "$APK" | tee -a $LOG
+adb install -r testiconpack/build/outputs/apk/debug/testiconpack-debug.apk | tee -a $LOG
 # the stock launcher tends to ANR on CI emulators and covers the screen; switch it off
 adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher 2>&1 | tee -a $LOG
 adb shell cmd role add-role-holder --user 0 android.app.role.HOME com.anuki.launcher 2>&1 | tee -a $LOG
@@ -185,6 +212,112 @@ adb shell cmd notification allow_listener com.anuki.launcher/com.anuki.launcher.
 sleep 2
 adb shell cmd notification post -S bigtext -t "아늑이" smoke_test "배지 확인용 알림" 2>&1 | tee -a $LOG
 sleep 3
+
+step "change one icon (built-in cat icon)"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+if open_icon_picker "Clock"; then
+  shot 16-icon-picker
+  G=$(ui shots/picker.xml find "고양이 아이콘: games")
+  echo "games cell=$G" >> $LOG
+  [ -n "$G" ] && adb shell input tap $G
+  sleep 2
+  shot 17-icon-changed
+fi
+
+step "photo icon"
+adb push .github/scripts/test_photo.png /sdcard/Download/anuki_test.png | tee -a $LOG
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/anuki_test.png >/dev/null 2>&1
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+if open_icon_picker "Camera"; then
+  PH=$(ui shots/picker.xml find "아이콘 선택: 사진")
+  echo "photo cell=$PH" >> $LOG
+  if [ -n "$PH" ]; then
+    adb shell input tap $PH
+    sleep 4
+    shot 18-document-picker
+    dump docs
+    F=$(ui shots/docs.xml text anuki_test.png)
+    if [ -z "$F" ]; then
+      R=$(ui shots/docs.xml anydesc "Show roots")
+      [ -n "$R" ] && adb shell input tap $R && sleep 2
+      dump roots
+      D=$(ui shots/roots.xml text "Downloads")
+      [ -n "$D" ] && adb shell input tap $D && sleep 3
+      dump docs2
+      F=$(ui shots/docs2.xml text anuki_test.png)
+    fi
+    echo "photo file=$F" >> $LOG
+    if [ -n "$F" ]; then
+      adb shell input tap $F
+      sleep 3
+      dump style
+      ST=$(ui shots/style.xml text "고양이 얼굴 틀에 넣기")
+      echo "style=$ST" >> $LOG
+      [ -n "$ST" ] && adb shell input tap $ST
+      sleep 5
+    fi
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    shot 19-photo-icon
+  fi
+fi
+
+step "launcher app icon -> pink"
+adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+sleep 3
+AI=$(find_scroll "아늑이 런처 앱 아이콘")
+echo "app icon row=$AI" >> $LOG
+if [ -n "$AI" ]; then
+  adb shell input tap $AI
+  sleep 2
+  dump appicon
+  PK=$(ui shots/appicon.xml text "핑크")
+  [ -n "$PK" ] && adb shell input tap $PK
+  sleep 3
+fi
+adb shell cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null | grep -i anuki >> $LOG
+
+step "external icon pack for every app"
+adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+sleep 2
+IP=$(find_scroll "아이콘 팩")
+echo "icon pack row=$IP" >> $LOG
+if [ -n "$IP" ]; then
+  adb shell input tap $IP
+  sleep 2
+  dump packs
+  TP=$(ui shots/packs.xml text "시험용 아이콘 팩")
+  echo "test pack item=$TP" >> $LOG
+  [ -n "$TP" ] && adb shell input tap $TP
+  sleep 2
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+shot 20-iconpack-home
+adb shell input swipe 540 1500 540 400 200
+sleep 3
+shot 21-iconpack-drawer
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+step "one icon from the icon pack"
+if open_icon_picker "Chrome"; then
+  PC=$(ui shots/picker.xml find "아이콘 선택: 아이콘 팩")
+  echo "pack cell=$PC" >> $LOG
+  if [ -n "$PC" ]; then
+    adb shell input tap $PC
+    sleep 3
+    dump packgrid
+    STAR=$(ui shots/packgrid.xml anydesc pack_star)
+    echo "pack_star=$STAR" >> $LOG
+    [ -n "$STAR" ] && adb shell input tap $STAR
+    sleep 2
+  fi
+  shot 22-pack-icon-one-app
+fi
+adb logcat -d | grep -E "icon override|app icon ->" >> $LOG
 
 step "settings"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG

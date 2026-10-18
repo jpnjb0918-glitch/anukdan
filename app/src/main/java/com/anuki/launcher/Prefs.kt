@@ -48,6 +48,7 @@ class Prefs(ctx: Context) {
     var theme by strPref("theme", "auto")            // auto | light | dark
     var catIcons by boolPref("cat_icons", true)
     var catPlate by boolPref("cat_plate", true)
+    var iconPack by strPref("icon_pack", "builtin")   // builtin | none | icon pack package name
 
     // badges: off | dot | count
     var badgeStyle by strPref("badges", "dot")
@@ -91,6 +92,7 @@ class Prefs(ctx: Context) {
         val m = HashMap(iconOverrides())
         if (value == null) m.remove(key) else m[key] = value
         sp.edit().putString("icon_overrides", JSONObject(m as Map<*, *>).toString()).apply()
+        android.util.Log.d("Anuki", "icon override $key -> $value")
         overridesCache = m
         bump()
     }

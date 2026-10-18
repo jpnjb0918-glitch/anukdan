@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AnukiLauncher"
 include(":app")
+include(":testiconpack") // emulator check only

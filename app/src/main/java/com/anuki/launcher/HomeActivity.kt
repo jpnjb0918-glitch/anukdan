@@ -174,6 +174,16 @@ class HomeActivity : Activity(), PagedView.Listener {
             if (gone.isNotEmpty()) model.save()
             apps.removedPackages.clear()
         }
+        // the launcher's own entry switches component when its icon alias changes
+        apps.all.firstOrNull { it.packageName == packageName }?.let { own ->
+            var moved = false
+            for (it in model.items) {
+                if (it.type == HomeItem.TYPE_APP && it.key.startsWith("$packageName/") && apps.find(it.key) == null) {
+                    it.key = own.key; moved = true
+                }
+            }
+            if (moved) model.save()
+        }
         if (!prefs.firstRunDone && model.items.isEmpty()) askDefaultHomeOnce()
         icons.preload(apps.all, iconSize)
         bindAll()
@@ -505,7 +515,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             app != null -> {
                 list += shortcuts(app)
                 list += MenuEntry("앱 정보") { appInfo(app) }
-                list += MenuEntry("아이콘 바꾸기") { Dialogs.iconPicker(this, app) { bindAll() } }
+                list += MenuEntry("아이콘 바꾸기") { Dialogs.iconPicker(this, app, { bindAll() }, onPhoto = { pickPhotoFor(app) }) }
                 if (source == DragInfo.SRC_DRAWER) {
                     list += MenuEntry("홈 화면에 추가") { addToHome(app) }
                     list += MenuEntry("앱 서랍에서 숨기기") { prefs.hidden = prefs.hidden + app.key; drawer.refresh() }
@@ -602,6 +612,37 @@ class HomeActivity : Activity(), PagedView.Listener {
         }
     }
 
+    // ------------------------------------------------------------ photo icons
+
+    private var pendingIconKey: String? = null
+
+    private fun pickPhotoFor(app: AppEntry) {
+        pendingIconKey = app.key
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*")
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, REQ_PICK_PHOTO)
+        } catch (_: Exception) { toast("사진을 고를 수 있는 앱이 없어요") }
+    }
+
+    private fun onPhotoPicked(uri: Uri) {
+        val key = pendingIconKey ?: return
+        Dialogs.photoStyle(this) { style ->
+            toast("아이콘을 만드는 중…")
+            Thread {
+                val name = CustomIcons.create(this, uri, style)
+                runOnUiThread {
+                    if (name == null) { toast("사진을 읽지 못했어요"); return@runOnUiThread }
+                    prefs.setIconOverride(key, IconProvider.FILE + name)
+                    icons.invalidate()
+                    bindAll()
+                    if (drawer.isOpen) drawer.refresh()
+                    toast("사진 아이콘으로 바꿨어요")
+                }
+            }.start()
+        }
+    }
+
     // ------------------------------------------------------------ widgets
 
     private fun pickWidget() {
@@ -670,6 +711,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             }
             REQ_BIND_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) configureOrPlace(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
+            REQ_PICK_PHOTO -> if (resultCode == RESULT_OK) data?.data?.let { onPhotoPicked(it) }
             REQ_CONFIG_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) placeWidget(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
         }
@@ -703,6 +745,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         const val REQ_BIND_WIDGET = 12
         const val REQ_CONFIG_WIDGET = 13
         const val REQ_DEFAULT_HOME = 14
+        const val REQ_PICK_PHOTO = 15
     }
 }
 

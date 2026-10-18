@@ -89,34 +89,69 @@ class IconProvider(private val ctx: Context) {
         autoMap = map
     }
 
-    /** Cat icon name for [app], or null if it should keep its own icon. */
+    /** Active icon source: "builtin" (cat icons), "none" (original icons) or an icon pack's package name. */
+    fun mode(): String {
+        val p = LauncherApp.instance.prefs
+        return if (p.iconPack == "builtin" && !p.catIcons) "none" else p.iconPack
+    }
+
+    /** Built-in cat icon name that [app] currently shows, or null. */
     fun catIconName(app: AppEntry): String? {
-        val prefs = LauncherApp.instance.prefs
-        val ov = prefs.iconOverrides()[app.key]
-        if (ov != null) return if (ov == ORIGINAL) null else ov
-        if (!prefs.catIcons) return null
+        val ov = LauncherApp.instance.prefs.iconOverrides()[app.key]
+        if (ov != null) return if (ov.startsWith("@")) null else ov
+        if (mode() != "builtin" || app.packageName == ctx.packageName) return null
         return autoMap[app.packageName]
     }
 
     fun appIcon(app: AppEntry, size: Int): Bitmap {
         val k = app.key + "@" + size
         cache.get(k)?.let { return it }
-        val prefs = LauncherApp.instance.prefs
-        val name = catIconName(app)
-        val cat = name?.let { asset(it) }
-        val bmp = if (cat != null) {
-            scaled(cat, size)
-        } else {
-            val d = try { app.info.getBadgedIcon(ctx.resources.displayMetrics.densityDpi) } catch (_: Exception) { null }
-            val wantsPlate = prefs.catIcons && prefs.catPlate && prefs.iconOverrides()[app.key] != ORIGINAL
-            when {
-                d == null -> Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                wantsPlate -> catPlate(d, size)
-                else -> drawableToBitmap(d, size)
-            }
-        }
+        val bmp = try { render(app, size) } catch (_: Exception) { Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888) }
         cache.put(k, bmp)
         return bmp
+    }
+
+    private fun render(app: AppEntry, size: Int): Bitmap {
+        val prefs = LauncherApp.instance.prefs
+        val density = ctx.resources.displayMetrics.densityDpi
+        // 1) what the user picked for this app
+        val ov = prefs.iconOverrides()[app.key]
+        when {
+            ov == null -> {}
+            ov == ORIGINAL -> return originalIcon(app, size)
+            ov.startsWith(FILE) -> CustomIcons.load(ctx, ov.removePrefix(FILE))?.let { return scaled(it, size) }
+            ov.startsWith(PACK) -> {
+                val rest = ov.removePrefix(PACK)
+                IconPacks.get(ctx, rest.substringBefore(':'))?.drawable(rest.substringAfter(':'), density)
+                    ?.let { return drawableToBitmap(it, size) }
+            }
+            else -> asset(ov)?.let { return scaled(it, size) }
+        }
+        // 2) the launcher's own entry keeps the icon chosen in settings
+        if (app.packageName == ctx.packageName) return originalIcon(app, size)
+        // 3) the active icon source
+        return when (val m = mode()) {
+            "none" -> originalIcon(app, size)
+            "builtin" -> {
+                val cat = autoMap[app.packageName]?.let { asset(it) }
+                when {
+                    cat != null -> scaled(cat, size)
+                    prefs.catPlate -> {
+                        val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
+                        if (d != null) catPlate(d, size) else originalIcon(app, size)
+                    }
+                    else -> originalIcon(app, size)
+                }
+            }
+            else -> {
+                val pack = IconPacks.get(ctx, m)
+                val d = pack?.iconFor(app.component, density)
+                if (d != null) drawableToBitmap(d, size) else {
+                    val orig = originalIcon(app, size)
+                    pack?.compose(orig, size, app.key.hashCode(), density) ?: orig
+                }
+            }
+        }
     }
 
     fun originalIcon(app: AppEntry, size: Int): Bitmap {
@@ -190,6 +225,8 @@ class IconProvider(private val ctx: Context) {
 
     companion object {
         const val ORIGINAL = "@original"
+        const val FILE = "@file:"
+        const val PACK = "@pack:"
         val INK = 0xFF111111.toInt()
         val CYAN = 0xFF4BD5D6.toInt()
         val TEAL = 0xFF2E9497.toInt()

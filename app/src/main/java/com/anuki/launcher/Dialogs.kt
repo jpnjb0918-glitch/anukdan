@@ -116,10 +116,21 @@ object Dialogs {
     }
 
     // ------------------------------------------------------------ per-app icon
-    fun iconPicker(a: Activity, app: AppEntry, onDone: () -> Unit) {
+    private const val OPT_AUTO = "@auto"
+    private const val OPT_PHOTO = "@photo"
+    private const val OPT_PACK = "@pack"
+
+    /** Icon grid for one app: auto / original / photo / another icon pack / the 54 cat icons. */
+    fun iconPicker(a: Activity, app: AppEntry, onDone: () -> Unit, onPhoto: (() -> Unit)? = null) {
         val icons = LauncherApp.instance.icons
         val prefs = LauncherApp.instance.prefs
-        val options = listOf("@auto", IconProvider.ORIGINAL) + icons.catNames
+        val packs = IconPacks.installed(a)
+        val options = ArrayList<String>()
+        options += OPT_AUTO
+        options += IconProvider.ORIGINAL
+        if (onPhoto != null) options += OPT_PHOTO
+        if (packs.isNotEmpty()) options += OPT_PACK
+        options += icons.catNames
         val size = a.dp(48f)
         val grid = GridView(a).apply {
             numColumns = 5
@@ -135,27 +146,141 @@ object Dialogs {
                 val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
                 val iv = ImageView(a)
                 val o = options[position]
+                val label = when (o) {
+                    OPT_AUTO -> "자동"
+                    IconProvider.ORIGINAL -> "원래"
+                    OPT_PHOTO -> "사진"
+                    OPT_PACK -> "아이콘 팩"
+                    else -> ""
+                }
                 when (o) {
-                    "@auto" -> iv.setImageResource(android.R.drawable.ic_menu_revert)
+                    OPT_AUTO -> iv.setImageResource(android.R.drawable.ic_menu_revert)
                     IconProvider.ORIGINAL -> iv.setImageBitmap(icons.originalIcon(app, size))
+                    OPT_PHOTO -> iv.setImageResource(android.R.drawable.ic_menu_gallery)
+                    OPT_PACK -> iv.setImageResource(android.R.drawable.ic_menu_view)
                     else -> iv.setImageBitmap(icons.asset(o))
                 }
+                col.contentDescription = if (label.isNotEmpty()) "아이콘 선택: $label" else "고양이 아이콘: $o"
                 col.addView(iv, LinearLayout.LayoutParams(size, size))
-                col.addView(TextView(a).apply {
-                    text = when (o) { "@auto" -> "자동"; IconProvider.ORIGINAL -> "원래"; else -> "" }
-                    textSize = 11f; gravity = Gravity.CENTER
-                })
+                col.addView(TextView(a).apply { text = label; textSize = 11f; gravity = Gravity.CENTER })
                 return col
             }
         }
         grid.setOnItemClickListener { _, _, position, _ ->
-            val o = options[position]
-            prefs.setIconOverride(app.key, if (o == "@auto") null else o)
-            icons.invalidate()
+            dialog?.dismiss()
+            when (val o = options[position]) {
+                OPT_PHOTO -> onPhoto?.invoke()
+                OPT_PACK -> packIconPicker(a, app, packs, onDone)
+                else -> {
+                    prefs.setIconOverride(app.key, if (o == OPT_AUTO) null else o)
+                    icons.invalidate()
+                    onDone()
+                }
+            }
+        }
+        dialog = AlertDialog.Builder(a).setTitle("${app.label} 아이콘").setView(grid).setNegativeButton("취소", null).show()
+    }
+
+    /** Pick one icon out of an installed icon pack (with a name filter, packs can hold thousands). */
+    fun packIconPicker(a: Activity, app: AppEntry, packs: List<IconPackInfo>, onDone: () -> Unit) {
+        if (packs.size > 1) {
+            AlertDialog.Builder(a).setTitle("아이콘 팩 고르기")
+                .setItems(packs.map { it.label }.toTypedArray()) { _, which -> packIconGrid(a, app, packs[which], onDone) }
+                .setNegativeButton("취소", null).show()
+        } else if (packs.size == 1) {
+            packIconGrid(a, app, packs[0], onDone)
+        }
+    }
+
+    private fun packIconGrid(a: Activity, app: AppEntry, info: IconPackInfo, onDone: () -> Unit) {
+        val pack = IconPacks.get(a, info.packageName)
+        if (pack == null) {
+            Toast.makeText(a, "아이콘 팩을 읽을 수 없어요", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val all = pack.allIconNames()
+        var shown = all
+        val density = a.resources.displayMetrics.densityDpi
+        val size = a.dp(48f)
+        val column = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        val filter = EditText(a).apply { hint = "아이콘 이름 검색"; setSingleLine(true) }
+        column.addView(filter, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(a.dp(16f), a.dp(8f), a.dp(16f), 0)
+        })
+        val grid = GridView(a).apply {
+            numColumns = 5
+            verticalSpacing = a.dp(10f)
+            setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(12f))
+        }
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = shown.size
+            override fun getItem(position: Int) = shown[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val iv = (convertView as? ImageView) ?: ImageView(a).apply {
+                    layoutParams = android.widget.AbsListView.LayoutParams(size, size)
+                }
+                val name = shown[position]
+                iv.setImageDrawable(pack.drawable(name, density))
+                iv.contentDescription = name
+                return iv
+            }
+        }
+        grid.adapter = adapter
+        column.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(420f)))
+        filter.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val q = s?.toString()?.trim()?.lowercase() ?: ""
+                shown = if (q.isEmpty()) all else all.filter { it.lowercase().contains(q) }
+                adapter.notifyDataSetChanged()
+            }
+        })
+        var dialog: AlertDialog? = null
+        grid.setOnItemClickListener { _, _, position, _ ->
+            LauncherApp.instance.prefs.setIconOverride(app.key, IconProvider.PACK + info.packageName + ":" + shown[position])
+            LauncherApp.instance.icons.invalidate()
             dialog?.dismiss()
             onDone()
         }
-        dialog = AlertDialog.Builder(a).setTitle("${app.label} 아이콘").setView(grid).setNegativeButton("취소", null).show()
+        dialog = AlertDialog.Builder(a).setTitle("${info.label} (${all.size}개)").setView(column)
+            .setNegativeButton("취소", null).show()
+    }
+
+    /** Frame for a photo icon. */
+    fun photoStyle(a: Activity, onPick: (String) -> Unit) {
+        AlertDialog.Builder(a).setTitle("사진 아이콘 모양")
+            .setItems(arrayOf("고양이 얼굴 틀에 넣기", "둥근 사각형 그대로")) { _, which ->
+                onPick(if (which == 0) CustomIcons.STYLE_CAT else CustomIcons.STYLE_ROUNDED)
+            }
+            .setNegativeButton("취소", null).show()
+    }
+
+    // ------------------------------------------------------------ icon source for every app
+    fun iconPackChooser(a: Activity, onDone: () -> Unit) {
+        val prefs = LauncherApp.instance.prefs
+        val packs = IconPacks.installed(a)
+        val values = listOf("builtin", "none") + packs.map { it.packageName }
+        val labels = listOf("고양이 아이콘 (내장)", "원래 아이콘") + packs.map { it.label }
+        val current = LauncherApp.instance.icons.mode()
+        AlertDialog.Builder(a).setTitle(if (packs.isEmpty()) "아이콘 팩 (설치된 외부 팩 없음)" else "아이콘 팩")
+            .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { d, which ->
+                d.dismiss()
+                prefs.catIcons = true
+                prefs.iconPack = values[which]
+                LauncherApp.instance.icons.invalidate()
+                onDone()
+            }
+            .setNegativeButton("취소", null).show()
+    }
+
+    fun iconPackLabel(a: Activity): String {
+        return when (val m = LauncherApp.instance.icons.mode()) {
+            "builtin" -> "고양이 아이콘 (내장)"
+            "none" -> "원래 아이콘"
+            else -> IconPacks.installed(a).firstOrNull { it.packageName == m }?.label ?: "$m (찾을 수 없음)"
+        }
     }
 
     // ------------------------------------------------------------ wallpapers

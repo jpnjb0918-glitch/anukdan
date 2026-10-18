@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item drawable="pack_red" />
+    <item drawable="pack_green" />
+    <item drawable="pack_blue" />
+    <item drawable="pack_star" />
+</resources>

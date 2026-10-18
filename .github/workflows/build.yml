@@ -39,7 +39,7 @@ jobs:
         env:
           ANUKI_KEYSTORE_PASS: ${{ secrets.ANUKI_KEYSTORE_PASS || secrets.NYANG_KEYSTORE_PASS }}
         run: |
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon :app:assembleRelease
           cp app/build/outputs/apk/release/app-release.apk anuki-launcher.apk
 
       - uses: actions/upload-artifact@v4

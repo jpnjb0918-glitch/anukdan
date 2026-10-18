@@ -72,9 +72,21 @@ class SettingsActivity : Activity() {
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
         choice("테마 (앱 서랍·폴더)", listOf("auto" to "시스템 따라가기", "light" to "밝게", "dark" to "어둡게"), prefs.theme) { prefs.theme = it }
-        switch("고양이 아이콘 쓰기", "브라우저·카메라·메시지 같은 앱을 고양이 아이콘으로 바꿔요", prefs.catIcons) { prefs.catIcons = it }
-        switch("나머지 앱에 고양이 테두리", "고양이 아이콘이 없는 앱은 원래 아이콘을 고양이 얼굴 안에 넣어요", prefs.catPlate) { prefs.catPlate = it }
-        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고를 수도 있어요.")
+        action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 설치한 다른 아이콘 팩도 고를 수 있어요") {
+            Dialogs.iconPackChooser(this) { build() }
+        }
+        switch("나머지 앱에 고양이 테두리", "고양이 아이콘 팩을 쓸 때, 고양이 아이콘이 없는 앱은 원래 아이콘을 고양이 얼굴 안에 넣어요", prefs.catPlate) { prefs.catPlate = it }
+        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고양이 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
+        action("아늑이 런처 앱 아이콘", AppIcon.label(this)) {
+            val opts = AppIcon.OPTIONS
+            AlertDialog.Builder(this).setTitle("아늑이 런처 앱 아이콘")
+                .setSingleChoiceItems(opts.map { it.second }.toTypedArray(), opts.indexOfFirst { it.first == AppIcon.current(this) }.coerceAtLeast(0)) { d, which ->
+                    d.dismiss()
+                    AppIcon.set(this, opts[which].first)
+                    Toast.makeText(this, "앱 아이콘을 바꿨어요. 홈 화면에 반영되기까지 잠깐 걸릴 수 있어요.", Toast.LENGTH_LONG).show()
+                    build()
+                }.setNegativeButton("취소", null).show()
+        }
         action("배경화면", "고양이 배경 3종 또는 내 사진") { Dialogs.wallpaper(this) }
 
         section("제스처")
@@ -246,6 +258,7 @@ class SettingsActivity : Activity() {
                 val ok = try {
                     val o = JSONObject().put("app", "anuki-launcher").put("version", 1)
                         .put("prefs", prefs.exportJson()).put("layout", model.toJson())
+                        .put("customIcons", CustomIcons.exportJson(this))
                     contentResolver.openOutputStream(uri)?.use { it.write(o.toString(2).toByteArray()) }
                     true
                 } catch (_: Exception) { false }
@@ -258,6 +271,7 @@ class SettingsActivity : Activity() {
                     require(o.optString("app") in setOf("anuki-launcher", "nyang-launcher"))
                     val host = AnukiWidgetHost(this)
                     for (it in model.items) if (it.type == HomeItem.TYPE_WIDGET) try { host.deleteAppWidgetId(it.widgetId) } catch (_: Exception) { }
+                    o.optJSONObject("customIcons")?.let { CustomIcons.importJson(this, it) }
                     prefs.importJson(o.getJSONObject("prefs"))
                     model.fromJson(o.getJSONObject("layout"), skipWidgets = true)
                     model.save()
