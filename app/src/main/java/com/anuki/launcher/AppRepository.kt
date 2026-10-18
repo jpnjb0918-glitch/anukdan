@@ -79,8 +79,11 @@ class AppRepository(private val ctx: Context) {
                 }
             }
             list.sortWith { a, b -> collator.compare(a.label, b.label) }
-            val mode = LauncherApp.instance.icons.mode()
-            if (mode != "builtin" && mode != "none") IconPacks.get(ctx, mode)
+            when (val mode = LauncherApp.instance.icons.mode()) {
+                "builtin", "none" -> {}
+                IconProvider.LINES -> LineIcons.names(ctx)
+                else -> IconPacks.get(ctx, mode)
+            }
             main.post {
                 all = list
                 byKey = list.associateBy { it.key }

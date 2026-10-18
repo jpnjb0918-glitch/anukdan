@@ -72,11 +72,11 @@ class SettingsActivity : Activity() {
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
         choice("테마 (앱 서랍·폴더)", listOf("auto" to "시스템 따라가기", "light" to "밝게", "dark" to "어둡게"), prefs.theme) { prefs.theme = it }
-        action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 설치한 다른 아이콘 팩도 고를 수 있어요") {
+        action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 고양이 선 아이콘, 설치한 다른 아이콘 팩도 고를 수 있어요") {
             Dialogs.iconPackChooser(this) { build() }
         }
         switch("나머지 앱에 고양이 테두리", "고양이 아이콘 팩을 쓸 때, 고양이 아이콘이 없는 앱은 원래 아이콘을 고양이 얼굴 안에 넣어요", prefs.catPlate) { prefs.catPlate = it }
-        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고양이 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
+        note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고양이 아이콘·선 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
         action("아늑이 런처 앱 아이콘", AppIcon.label(this)) {
             val opts = AppIcon.OPTIONS
             AlertDialog.Builder(this).setTitle("아늑이 런처 앱 아이콘")
@@ -120,6 +120,7 @@ class SettingsActivity : Activity() {
 
         section("정보")
         note("아늑이 런처 1.0 · 노바런처의 기능 구성을 참고해 만든 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
+        action("선 아이콘 라이선스", "Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
     }
