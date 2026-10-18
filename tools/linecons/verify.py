@@ -19,6 +19,8 @@ def to_svg(d):
     parts = []
     for el in d.split("|"):
         flags, path = el.split(" ", 1)
+        if flags.startswith("W"):
+            continue
         sw = None; fill = "none"; rule = "nonzero"; dash = ""
         m = re.match(r"(?:S([\d.]+))?(?:D([\d.,]+))?(?:O(-?[\d.]+))?(F)?(E)?$", flags)
         if m.group(1):

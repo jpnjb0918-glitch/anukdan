@@ -121,7 +121,7 @@ object Dialogs {
     private const val OPT_PACK = "@pack"
     private const val OPT_LINE = "@lines"
 
-    /** Icon grid for one app: auto / original / photo / line icons / another icon pack / the 54 cat icons. */
+    /** Icon grid for one app: auto / original / photo / more cat icons (generated) / another icon pack / the 54 cat icons. */
     fun iconPicker(a: Activity, app: AppEntry, onDone: () -> Unit, onPhoto: (() -> Unit)? = null) {
         val icons = LauncherApp.instance.icons
         val prefs = LauncherApp.instance.prefs
@@ -152,7 +152,7 @@ object Dialogs {
                     OPT_AUTO -> "자동"
                     IconProvider.ORIGINAL -> "원래"
                     OPT_PHOTO -> "사진"
-                    OPT_LINE -> "선 아이콘"
+                    OPT_LINE -> "더 많은 고양이"
                     OPT_PACK -> "아이콘 팩"
                     else -> ""
                 }
@@ -161,8 +161,8 @@ object Dialogs {
                     IconProvider.ORIGINAL -> iv.setImageBitmap(icons.originalIcon(app, size))
                     OPT_PHOTO -> iv.setImageResource(android.R.drawable.ic_menu_gallery)
                     OPT_PACK -> iv.setImageResource(android.R.drawable.ic_menu_view)
-                    OPT_LINE -> iv.setImageBitmap(LineIcons.nameFor(a, app.component)?.let { LineIcons.render(a, it, size) }
-                        ?: icons.asset("settings"))
+                    OPT_LINE -> iv.setImageBitmap(LineIcons.nameFor(a, app.component)?.let { LineIcons.render(a, it, size, app.packageName) }
+                        ?: icons.asset("folder"))
                     else -> iv.setImageBitmap(icons.asset(o))
                 }
                 col.contentDescription = if (label.isNotEmpty()) "아이콘 선택: $label" else "고양이 아이콘: $o"
@@ -234,13 +234,13 @@ object Dialogs {
         }
     }
 
-    /** The built-in line icons (Arcticons-based); the one matching this app comes first. */
+    /** The generated cat icons (drawings adapted from Arcticons); the one matching this app comes first. */
     private fun lineIconGrid(a: Activity, app: AppEntry, onDone: () -> Unit) {
         loading(a, { LineIcons.names(a).asList() to LineIcons.nameFor(a, app.component) }) { r ->
             val (names, match) = r ?: return@loading
             val all = if (match != null) listOf(match) + names.filter { it != match } else names
             val size = a.dp(48f)
-            searchGrid(a, "선 아이콘 (${names.size}개)", all, { iv, name -> iv.setImageBitmap(LineIcons.render(a, name, size)) }) { name ->
+            searchGrid(a, "고양이 아이콘 (${names.size}개)", all, { iv, name -> iv.setImageBitmap(LineIcons.render(a, name, size)) }) { name ->
                 LauncherApp.instance.prefs.setIconOverride(app.key, IconProvider.LINE + name)
                 LauncherApp.instance.icons.invalidate()
                 onDone()
@@ -308,8 +308,8 @@ object Dialogs {
     fun iconPackChooser(a: Activity, onDone: () -> Unit) {
         val prefs = LauncherApp.instance.prefs
         val packs = IconPacks.installed(a)
-        val values = listOf("builtin", IconProvider.LINES, "none") + packs.map { it.packageName }
-        val labels = listOf("고양이 아이콘 (내장)", LINES_LABEL, "원래 아이콘") + packs.map { it.label }
+        val values = listOf("builtin", "none") + packs.map { it.packageName }
+        val labels = listOf(CAT_LABEL, "원래 아이콘") + packs.map { it.label }
         val current = LauncherApp.instance.icons.mode()
         AlertDialog.Builder(a).setTitle(if (packs.isEmpty()) "아이콘 팩 (설치된 외부 팩 없음)" else "아이콘 팩")
             .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { d, which ->
@@ -322,24 +322,24 @@ object Dialogs {
                     onDone()
                 }
                 when {
-                    v == "builtin" || v == "none" || IconPacks.isLoaded(v) -> commit()
-                    v == IconProvider.LINES -> loading(a, { LineIcons.names(a) }) { commit() }
+                    v == "none" || IconPacks.isLoaded(v) -> commit()
+                    v == "builtin" -> loading(a, { LineIcons.names(a) }) { commit() }
                     else -> loading(a, { IconPacks.get(a, v) }) { commit() }
                 }
             }
             .setNegativeButton("취소", null).show()
     }
 
-    const val LINES_LABEL = "고양이 선 아이콘 (Arcticons 기반)"
+    const val CAT_LABEL = "고양이 아이콘 (내장)"
 
-    /** Credits for the built-in line icons (CC BY-SA 4.0 asks for the author, licence, source and changes). */
+    /** Credits for the generated cat icons' drawings (CC BY-SA 4.0 asks for the author, licence, source and changes). */
     fun lineIconsLicense(a: Activity) {
-        val text = "고양이 선 아이콘의 선 그림은 Arcticons 아이콘을 바꿔서 만든 거예요.\n\n" +
+        val text = "고양이 아이콘 중 손으로 그린 54종을 뺀 나머지는 고양이 틀 안에 Arcticons 아이콘 그림을 바꿔 넣은 거예요.\n\n" +
             "원작: Arcticons — Donnnno와 기여자들\nhttps://github.com/Arcticons-Team/Arcticons\n\n" +
             "라이선스: CC BY-SA 4.0\nhttps://creativecommons.org/licenses/by-sa/4.0/\n\n" +
-            "바꾼 점: SVG를 경로 데이터로 변환, 선 굵기·색 변경, 고양이 얼굴 판 위에 배치.\n" +
+            "바꾼 점: SVG를 경로 데이터로 변환, 선 굵기·색 변경, 닫힌 모양을 흰색·하늘색으로 채움, 고양이 틀 안에 배치.\n" +
             "바꾼 선 그림 데이터(앱의 assets/linecons)도 CC BY-SA 4.0으로 공개해요."
-        AlertDialog.Builder(a).setTitle("선 아이콘 라이선스").setMessage(text)
+        AlertDialog.Builder(a).setTitle("아이콘 그림 라이선스").setMessage(text)
             .setPositiveButton("확인", null)
             .setNeutralButton("Arcticons 열기") { _, _ ->
                 try { a.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Arcticons-Team/Arcticons"))) } catch (_: Exception) { }
@@ -348,8 +348,7 @@ object Dialogs {
 
     fun iconPackLabel(a: Activity): String {
         return when (val m = LauncherApp.instance.icons.mode()) {
-            "builtin" -> "고양이 아이콘 (내장)"
-            IconProvider.LINES -> LINES_LABEL
+            "builtin" -> CAT_LABEL
             "none" -> "원래 아이콘"
             else -> IconPacks.installed(a).firstOrNull { it.packageName == m }?.label ?: "$m (찾을 수 없음)"
         }

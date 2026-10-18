@@ -1,4 +1,4 @@
-Line icon data for Anuki Launcher ("고양이 선 아이콘")
+Drawing data for Anuki Launcher's generated cat icons ("고양이 아이콘", the 15,322 that are not hand-made)
 
 Adapted from Arcticons by Donnnno and the Arcticons contributors
   Source: https://github.com/Arcticons-Team/Arcticons (icons/white, app/src/main/assets/appfilter.xml)
@@ -8,9 +8,12 @@ Adapted from Arcticons by Donnnno and the Arcticons contributors
 
 Changes made:
   - SVG files converted to compact path data (names.txt, icons/*.txt) by tools/linecons/convert.py
+  - closed outlines added as separate fill shapes (W elements) so they can be coloured in
   - appfilter.xml reduced to a package/class -> icon table (map/*.txt)
-  - when shown in the launcher the lines are drawn thicker, in black, on the launcher's cat-head plate
+  - when shown in the launcher the lines are drawn thicker and black, closed shapes are filled white / pale cyan,
+    and the drawing is placed on a tile inside the cat icon frame (assets/catfmt)
 
 This folder (the adapted icon data) is licensed under CC BY-SA 4.0.
-The cat-head plate and the rest of the launcher are not part of this folder and are not covered by this notice.
+The cat icon frame (assets/catfmt), the 54 hand-made cat icons (assets/icons) and the rest of the launcher are not
+part of this folder and are not covered by this notice.
 There is no warranty for this material; see the licence.

@@ -106,7 +106,9 @@ class IconProvider(private val ctx: Context) {
     /** Active icon source: "builtin" (cat icons), "none" (original icons) or an icon pack's package name. */
     fun mode(): String {
         val p = LauncherApp.instance.prefs
-        return if (p.iconPack == "builtin" && !p.catIcons) "none" else p.iconPack
+        // "lines" (a separate line icon set in 1.0.13) is now part of the cat icons
+        val pack = if (p.iconPack == LINES) "builtin" else p.iconPack
+        return if (pack == "builtin" && !p.catIcons) "none" else pack
     }
 
     /** Built-in cat icon name that [app] currently shows, or null. */
@@ -134,7 +136,7 @@ class IconProvider(private val ctx: Context) {
             ov == null -> {}
             ov == ORIGINAL -> return originalIcon(app, size)
             ov.startsWith(FILE) -> CustomIcons.load(ctx, ov.removePrefix(FILE))?.let { return scaled(it, size) }
-            ov.startsWith(LINE) -> LineIcons.render(ctx, ov.removePrefix(LINE), size)?.let { return it }
+            ov.startsWith(LINE) -> LineIcons.render(ctx, ov.removePrefix(LINE), size, app.packageName)?.let { return it }
             ov.startsWith(PACK) -> {
                 val rest = ov.removePrefix(PACK)
                 IconPacks.get(ctx, rest.substringBefore(':'))?.drawable(rest.substringAfter(':'), density)
@@ -147,25 +149,25 @@ class IconProvider(private val ctx: Context) {
         // 3) the active icon source
         return when (val m = mode()) {
             "none" -> originalIcon(app, size)
-            LINES -> {
-                val name = LineIcons.nameFor(ctx, app.component)
-                val line = name?.let { LineIcons.render(ctx, it, size) }
-                LauncherApp.dlog("line icon ${app.component.flattenToShortString()} -> ${name ?: "plate"}")
-                line ?: run {
-                    // not in the set: the original icon on the same cat plate keeps the screen consistent
-                    val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
-                    if (d != null) catPlate(d, size) else originalIcon(app, size)
-                }
-            }
             "builtin" -> {
+                // hand-made cat icon > generated cat icon (Arcticons drawing on the cat frame) > own icon in the cat frame
                 val cat = autoMap[app.packageName]?.let { asset(it) }
                 when {
-                    cat != null -> scaled(cat, size)
-                    prefs.catPlate -> {
-                        val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
-                        if (d != null) catPlate(d, size) else originalIcon(app, size)
+                    cat != null -> {
+                        LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> hand ${autoMap[app.packageName]}")
+                        scaled(cat, size)
                     }
-                    else -> originalIcon(app, size)
+                    !prefs.catPlate -> originalIcon(app, size)
+                    else -> {
+                        val name = LineIcons.nameFor(ctx, app.component)
+                        val made = name?.let { LineIcons.render(ctx, it, size, app.packageName) }
+                        LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> " +
+                            if (made != null) "drawing $name (${LineIcons.tileFor(app.packageName)})" else "own icon in frame")
+                        made ?: run {
+                            val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
+                            if (d != null) LineIcons.renderOriginal(ctx, d, size, app.packageName) else originalIcon(app, size)
+                        }
+                    }
                 }
             }
             else -> {
@@ -218,18 +220,6 @@ class IconProvider(private val ctx: Context) {
         return b
     }
 
-    /** Original icon drawn on a white cat-head plate with cyan ears and a black outline. */
-    fun catPlate(d: Drawable, size: Int): Bitmap {
-        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        val s = size / 100f
-        drawCatPlate(c, size)
-        val inset = 25 * s
-        d.setBounds((50 * s - inset).toInt(), (57 * s - inset).toInt(), (50 * s + inset).toInt(), (57 * s + inset).toInt())
-        d.draw(c)
-        return b
-    }
-
     /** Warm the cache off the main thread so the drawer opens smoothly. */
     fun preload(apps: List<AppEntry>, size: Int) {
         Thread {
@@ -238,28 +228,7 @@ class IconProvider(private val ctx: Context) {
     }
 
     companion object {
-        /** White cat head with cyan inner ears and a black outline; the face circle is centre (50, 57), radius 39 of 100. */
-        fun drawCatPlate(c: Canvas, size: Int) {
-            val s = size / 100f
-            val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = INK; style = Paint.Style.STROKE; strokeWidth = 4.5f * s; strokeJoin = Paint.Join.ROUND
-            }
-            val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-            val cyan = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = CYAN }
-            val earL = Path().apply {
-                moveTo(10 * s, 54 * s); lineTo(14 * s, 11 * s); quadTo(15 * s, 4 * s, 21 * s, 7 * s); lineTo(44 * s, 24 * s); close()
-            }
-            val earR = Path().apply {
-                moveTo(90 * s, 54 * s); lineTo(86 * s, 11 * s); quadTo(85 * s, 4 * s, 79 * s, 7 * s); lineTo(56 * s, 24 * s); close()
-            }
-            val inL = Path().apply { moveTo(17 * s, 14 * s); lineTo(15 * s, 33 * s); lineTo(33 * s, 23 * s); close() }
-            val inR = Path().apply { moveTo(83 * s, 14 * s); lineTo(85 * s, 33 * s); lineTo(67 * s, 23 * s); close() }
-            for (p in arrayOf(earL, earR)) { c.drawPath(p, white); c.drawPath(p, ink) }
-            c.drawPath(inL, cyan); c.drawPath(inR, cyan)
-            c.drawCircle(50 * s, 57 * s, 39 * s, white)
-            c.drawCircle(50 * s, 57 * s, 39 * s, ink)
-        }
-
+        /** Stored value of the old separate line icon set; treated as "builtin". */
         const val LINES = "lines"
         const val LINE = "@line:"
         const val ORIGINAL = "@original"

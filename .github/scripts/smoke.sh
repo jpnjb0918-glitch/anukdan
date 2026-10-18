@@ -465,7 +465,7 @@ else
   echo "real icon pack not installed - skipped" >> $LOG
 fi
 
-step "built-in line icons (Arcticons-based) for every app"
+step "cat icons for every app (54 hand-made + generated cat frames)"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
 sleep 2
 IP=$(find_scroll "아이콘 팩")
@@ -473,34 +473,39 @@ if [ -n "$IP" ]; then
   adb shell input tap $IP
   sleep 2
   dump packs3
-  LN=$(ui shots/packs3.xml text "고양이 선 아이콘 (Arcticons 기반)")
-  echo "line icons item=$LN" >> $LOG
-  if [ -n "$LN" ]; then
-    adb shell input tap $LN
+  CT=$(ui shots/packs3.xml text "고양이 아이콘 (내장)")
+  echo "cat icons item=$CT" >> $LOG
+  if [ -n "$CT" ]; then
+    adb shell input tap $CT
     for i in $(seq 1 20); do sleep 1; dump wait; grep -q "아이콘 팩 불러오는 중" shots/wait.xml || break; done
   fi
 fi
 adb shell input keyevent KEYCODE_HOME
 sleep 4
-shot 31-lines-home
+shot 31-cats-home
 adb shell input swipe 540 1500 540 400 200
 sleep 4
-shot 32-lines-drawer
+shot 32-cats-drawer
+dump catdrawer
+ui shots/catdrawer.xml list >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-adb logcat -d | grep -E "line icons:|line icon " | sort -u -k7 | tail -40 >> $LOG
+adb logcat -d | grep -E "line icons:|cat icon " | sort -u -k7 | tail -40 >> $LOG
 
-step "one app: pick a line icon by name"
-if open_icon_picker "Settings"; then
-  LC=$(ui shots/picker.xml find "아이콘 선택: 선 아이콘")
-  echo "line cell=$LC" >> $LOG
+step "one app: pick a generated cat icon by name"
+# Maps is only in the app drawer
+adb shell input swipe 540 1500 540 400 200
+sleep 3
+if open_icon_picker "Maps"; then
+  LC=$(ui shots/picker.xml find "아이콘 선택: 더 많은 고양이")
+  echo "more cats cell=$LC" >> $LOG
   if [ -n "$LC" ]; then
     adb shell input tap $LC
     for i in $(seq 1 20); do sleep 1; dump linegrid; grep -q "아이콘 팩 불러오는 중" shots/linegrid.xml || break; done
     sleep 1
     dump linegrid
-    shot 33-lines-grid
-    grep -o 'text="선 아이콘[^"]*"' shots/linegrid.xml | head -1 >> $LOG
+    shot 33-cats-grid
+    grep -o 'text="고양이 아이콘 ([^"]*"' shots/linegrid.xml | head -1 >> $LOG
     ET=$(ui shots/linegrid.xml classfirst android.widget.EditText)
     if [ -n "$ET" ]; then
       adb shell input tap $ET
@@ -510,28 +515,32 @@ if open_icon_picker "Settings"; then
       adb shell dumpsys input_method | grep -q "mInputShown=true" && adb shell input keyevent KEYCODE_BACK
       sleep 1
       dump linegrid2
-      shot 34-lines-search
+      shot 34-cats-search
       CI=$(ui shots/linegrid2.xml desccontains "cat")
-      echo "first 'cat' line icon=$CI" >> $LOG
+      echo "first 'cat' icon=$CI" >> $LOG
       [ -n "$CI" ] && adb shell input tap $CI
       sleep 3
     fi
   fi
   adb shell input keyevent KEYCODE_HOME
   sleep 2
-  shot 35-lines-one-icon
+  adb shell input swipe 540 1500 540 400 200
+  sleep 4
+  shot 35-cats-one-icon
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
 fi
 adb logcat -d | grep -E "icon override" | tail -3 >> $LOG
 
-step "line icon licence screen"
+step "icon drawing licence screen"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
 sleep 2
-LI=$(find_scroll "선 아이콘 라이선스")
+LI=$(find_scroll "아이콘 그림 라이선스")
 echo "licence row=$LI" >> $LOG
 if [ -n "$LI" ]; then
   adb shell input tap $LI
   sleep 2
-  shot 36-lines-license
+  shot 36-cats-license
   dump licence
   grep -o "CC BY-SA 4.0" shots/licence.xml | head -1 >> $LOG
   adb shell input keyevent KEYCODE_BACK

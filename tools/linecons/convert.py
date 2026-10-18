@@ -6,7 +6,9 @@ Output (in OUT dir):
   names.txt      every icon name, sorted (Java String.compareTo order), one per line
   icons/NN.txt   icon data in the same order, CHUNK lines per file (file NN holds names[NN*CHUNK ...])
                  line = element|element|...  element = flags + ' ' + SVG path data in the 48x48 box
-                 flags: S<w> stroke width, D<a,b,..> dash intervals, O<x> dash offset, F fill, E even-odd fill
+                 flags: S<w> stroke width, D<a,b,..> dash intervals, O<x> dash offset, F fill, E even-odd fill,
+                        W<n> paper fill of one closed outline, n = how many other closed outlines enclose it
+                        (W elements come first, outermost first; the launcher colours them white / pale cyan)
                  path data: relative m/l/h/v/c/q/a/z commands, 2 decimals
   map/NN.txt     package/class<TAB>icon   ('@prefix' = date icons prefix1..prefix31)
                  NN = Java String.hashCode() of the package name, floorMod 64
@@ -17,6 +19,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from svgelements import SVG, Shape, Path, Move, Line, Close, CubicBezier, QuadraticBezier, Arc, Color
+from shapely.geometry import Polygon
 
 SRC, APPFILTER, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 SHARDS = 64
@@ -123,9 +126,42 @@ def path_data(p):
     return "".join(d)
 
 
+def subpaths(p):
+    out, cur = [], []
+    for seg in p:
+        if isinstance(seg, Move) and cur:
+            out.append(cur)
+            cur = []
+        cur.append(seg)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def closed_polygon(segs):
+    """Polygon of a closed subpath (explicit Z, or ends where it starts), else None."""
+    sp = Path(*segs)
+    n = max(48, 12 * len(segs))
+    try:
+        pts = [sp.point(t / n) for t in range(n + 1)]
+    except Exception:
+        return None
+    closed = any(isinstance(x, Close) for x in segs)
+    if not closed and abs(pts[0].x - pts[-1].x) < 0.05 and abs(pts[0].y - pts[-1].y) < 0.05:
+        closed = True
+    if not closed:
+        return None
+    try:
+        poly = Polygon([(q.x, q.y) for q in pts]).buffer(0)
+    except Exception:
+        return None
+    return poly if poly.area > 1.0 else None
+
+
 def convert(path):
     svg = SVG.parse(path, reify=True)
     out = []
+    papers = []  # (segments, polygon) of closed outlines that get a paper fill
     for e in svg.elements():
         if not isinstance(e, Shape):
             continue
@@ -156,12 +192,27 @@ def convert(path):
                             flags += "O" + fmt(r2(off))
                 except ValueError:
                     pass
+            for segs in subpaths(p):
+                poly = closed_polygon(segs)
+                if poly is not None:
+                    papers.append((segs, poly))
         if fill:
             flags += "F"
             if str(e.values.get("fill-rule", "")).strip() == "evenodd":
                 flags += "E"
         out.append(flags + " " + data)
-    return "|".join(out)
+    # paper fills: depth = number of bigger closed outlines around it; outermost drawn first
+    depth = []
+    for i, (_, poly) in enumerate(papers):
+        rp = poly.representative_point()
+        depth.append(sum(1 for j, (_, q) in enumerate(papers) if j != i and q.area > poly.area and q.contains(rp)))
+    order = sorted(range(len(papers)), key=lambda i: (depth[i], -papers[i][1].area))
+    fills = []
+    for i in order:
+        d = path_data(Path(*papers[i][0]))
+        if d:
+            fills.append(f"W{depth[i]} {d}")
+    return "|".join(fills + out)
 
 
 CHUNK = 256
