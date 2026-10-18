@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">냥런처</string>
-    <string name="settings_name">냥런처 설정</string>
+    <string name="app_name">아늑이 런처</string>
+    <string name="settings_name">아늑이 런처 설정</string>
     <string name="admin_desc">제스처로 화면을 끌 때만 사용해요.</string>
 </resources>

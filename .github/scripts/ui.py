@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 path, mode = sys.argv[1], sys.argv[2]
 try:
     nodes = [n for n in ET.parse(path).iter('node')
-             if n.get('package') == 'com.nyang.launcher' and n.get('content-desc')]
+             if n.get('package') == 'com.anuki.launcher' and n.get('content-desc')]
 except Exception:
     nodes = []
 

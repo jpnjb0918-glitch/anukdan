@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.nyang.launcher"
+    namespace = "com.anuki.launcher"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.nyang.launcher"
+        applicationId = "com.anuki.launcher"
         minSdk = 26
         targetSdk = 34
         // CI passes its run number so every build can be installed over the previous one
@@ -19,14 +19,14 @@ android {
 
     // Stable release key comes from GitHub secrets (see .github/workflows/build.yml).
     // Without it the release build falls back to the debug key.
-    val keystorePath = System.getenv("NYANG_KEYSTORE")
+    val keystorePath = System.getenv("ANUKI_KEYSTORE")
     signingConfigs {
         create("release") {
             if (keystorePath != null && file(keystorePath).exists()) {
                 storeFile = file(keystorePath)
-                storePassword = System.getenv("NYANG_KEYSTORE_PASS")
-                keyAlias = "nyang"
-                keyPassword = System.getenv("NYANG_KEYSTORE_PASS")
+                storePassword = System.getenv("ANUKI_KEYSTORE_PASS")
+                keyAlias = "nyang" // alias stored inside the existing key file
+                keyPassword = System.getenv("ANUKI_KEYSTORE_PASS")
             }
         }
     }

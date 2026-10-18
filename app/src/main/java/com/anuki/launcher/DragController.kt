@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 import android.graphics.Bitmap
 import android.graphics.Canvas

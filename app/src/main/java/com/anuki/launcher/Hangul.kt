@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 /** Korean initial-consonant (초성) search: "ㅋㅋㅇ" finds "카카오톡". */
 object Hangul {

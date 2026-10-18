@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -31,7 +31,7 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = "냥런처 설정"
+        title = "아늑이 런처 설정"
     }
 
     override fun onResume() {
@@ -52,7 +52,7 @@ class SettingsActivity : Activity() {
         header()
 
         section("기본")
-        action("기본 홈 앱으로 설정", if (Util.isDefaultHome(this)) "지금 냥런처가 기본 홈 앱이에요" else "아직 기본 홈 앱이 아니에요 — 눌러서 설정") {
+        action("기본 홈 앱으로 설정", if (Util.isDefaultHome(this)) "지금 아늑이 런처가 기본 홈 앱이에요" else "아직 기본 홈 앱이 아니에요 — 눌러서 설정") {
             Util.requestDefaultHome(this, REQ_DEFAULT)
         }
 
@@ -85,13 +85,13 @@ class SettingsActivity : Activity() {
 
         section("알림 배지")
         choice("배지 모양", listOf("off" to "끄기", "dot" to "점", "count" to "숫자"), prefs.badgeStyle) { prefs.badgeStyle = it }
-        action("알림 접근 권한", if (Badges.isAccessGranted(this)) "허용됨" else "허용 필요 — 눌러서 '냥런처'를 켜 주세요") {
+        action("알림 접근 권한", if (Badges.isAccessGranted(this)) "허용됨" else "허용 필요 — 눌러서 '아늑이 런처'를 켜 주세요") {
             try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (_: Exception) { }
         }
 
         section("백업")
         action("백업 파일 만들기", "홈 화면 배치와 설정을 파일로 저장해요") {
-            val name = "nyang-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.KOREA).format(Date()) + ".json"
+            val name = "anuki-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.KOREA).format(Date()) + ".json"
             val i = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("application/json").putExtra(Intent.EXTRA_TITLE, name)
             @Suppress("DEPRECATION") startActivityForResult(i, REQ_BACKUP)
@@ -107,7 +107,7 @@ class SettingsActivity : Activity() {
         }
 
         section("정보")
-        note("냥런처 1.0 · 노바런처의 기능 구성을 참고해 만든 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
+        note("아늑이 런처 1.0 · 노바런처의 기능 구성을 참고해 만든 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
 
         sv.post { sv.scrollTo(0, scrollY) }
     }
@@ -125,7 +125,7 @@ class SettingsActivity : Activity() {
         row.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), 0, 0, 0)
-            addView(TextView(context).apply { text = "냥런처"; textSize = 22f; setTypeface(typeface, Typeface.BOLD) })
+            addView(TextView(context).apply { text = "아늑이 런처"; textSize = 22f; setTypeface(typeface, Typeface.BOLD) })
             addView(TextView(context).apply { text = "고양이 아이콘 런처"; textSize = 13f; alpha = 0.7f })
         })
         list.addView(row)
@@ -225,7 +225,7 @@ class SettingsActivity : Activity() {
     // ------------------------------------------------------------ backup
 
     private fun resetLayout() {
-        val host = NyangWidgetHost(this)
+        val host = AnukiWidgetHost(this)
         for (it in model.items) if (it.type == HomeItem.TYPE_WIDGET) try { host.deleteAppWidgetId(it.widgetId) } catch (_: Exception) { }
         model.items.clear()
         model.pageCount = 1
@@ -244,7 +244,7 @@ class SettingsActivity : Activity() {
         when (requestCode) {
             REQ_BACKUP -> {
                 val ok = try {
-                    val o = JSONObject().put("app", "nyang-launcher").put("version", 1)
+                    val o = JSONObject().put("app", "anuki-launcher").put("version", 1)
                         .put("prefs", prefs.exportJson()).put("layout", model.toJson())
                     contentResolver.openOutputStream(uri)?.use { it.write(o.toString(2).toByteArray()) }
                     true
@@ -255,8 +255,8 @@ class SettingsActivity : Activity() {
                 val ok = try {
                     val text = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
                     val o = JSONObject(text)
-                    require(o.optString("app") == "nyang-launcher")
-                    val host = NyangWidgetHost(this)
+                    require(o.optString("app") in setOf("anuki-launcher", "nyang-launcher"))
+                    val host = AnukiWidgetHost(this)
                     for (it in model.items) if (it.type == HomeItem.TYPE_WIDGET) try { host.deleteAppWidgetId(it.widgetId) } catch (_: Exception) { }
                     prefs.importJson(o.getJSONObject("prefs"))
                     model.fromJson(o.getJSONObject("layout"), skipWidgets = true)
@@ -265,7 +265,7 @@ class SettingsActivity : Activity() {
                     prefs.bump()
                     true
                 } catch (_: Exception) { false }
-                Toast.makeText(this, if (ok) "복원했어요" else "냥런처 백업 파일이 아니거나 읽을 수 없어요", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (ok) "복원했어요" else "아늑이 런처 백업 파일이 아니거나 읽을 수 없어요", Toast.LENGTH_SHORT).show()
                 build()
             }
         }

@@ -21,14 +21,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Optional stable signing key: add repository secrets NYANG_KEYSTORE_B64 and NYANG_KEYSTORE_PASS.
+      # Optional stable signing key: add repository secrets ANUKI_KEYSTORE_B64 and ANUKI_KEYSTORE_PASS.
+      # (secrets registered under the earlier NYANG_* names keep working)
       - name: Prepare signing key
         env:
-          KS_B64: ${{ secrets.NYANG_KEYSTORE_B64 }}
+          KS_B64: ${{ secrets.ANUKI_KEYSTORE_B64 || secrets.NYANG_KEYSTORE_B64 }}
         run: |
           if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/nyang.jks"
-            echo "NYANG_KEYSTORE=$RUNNER_TEMP/nyang.jks" >> "$GITHUB_ENV"
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/anuki.jks"
+            echo "ANUKI_KEYSTORE=$RUNNER_TEMP/anuki.jks" >> "$GITHUB_ENV"
             echo "SIGNED_WITH=release" >> "$GITHUB_ENV"
           else
             echo "SIGNED_WITH=debug" >> "$GITHUB_ENV"
@@ -36,15 +37,15 @@ jobs:
 
       - name: Build APK
         env:
-          NYANG_KEYSTORE_PASS: ${{ secrets.NYANG_KEYSTORE_PASS }}
+          ANUKI_KEYSTORE_PASS: ${{ secrets.ANUKI_KEYSTORE_PASS || secrets.NYANG_KEYSTORE_PASS }}
         run: |
           ./gradlew --no-daemon assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk nyang-launcher.apk
+          cp app/build/outputs/apk/release/app-release.apk anuki-launcher.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nyang-launcher-apk
-          path: nyang-launcher.apk
+          name: anuki-launcher-apk
+          path: anuki-launcher.apk
 
       - name: Publish release
         env:
@@ -56,7 +57,7 @@ jobs:
           else
             NOTE="임시(디버그) 키로 서명했어요. 다음 버전을 설치하려면 먼저 지워야 할 수 있어요."
           fi
-          gh release create "$TAG" nyang-launcher.apk \
-            --title "냥런처 $TAG" \
-            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 nyang-launcher.apk를 내려받아 설치하세요. $NOTE" \
+          gh release create "$TAG" anuki-launcher.apk \
+            --title "아늑이 런처 $TAG" \
+            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 anuki-launcher.apk를 내려받아 설치하세요. $NOTE" \
             --latest

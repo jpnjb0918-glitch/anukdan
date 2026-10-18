@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "NyangLauncher"
+rootProject.name = "AnukiLauncher"
 include(":app")

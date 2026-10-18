@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 import android.app.Notification
 import android.app.admin.DeviceAdminReceiver
@@ -59,7 +59,7 @@ class BadgeService : NotificationListenerService() {
             val k = s.packageName + "#" + um.getSerialNumberForUser(s.user)
             m[k] = (m[k] ?: 0) + 1
         }
-        Log.d("Nyang", "badge counts updated: ${m.size} apps")
+        Log.d("Anuki", "badge counts updated: ${m.size} apps")
         Badges.update(m)
     }
 }
@@ -70,17 +70,17 @@ class LockAdminReceiver : DeviceAdminReceiver()
 
 // ---------------------------------------------------------------- widgets
 
-class NyangWidgetHost(ctx: Context) : AppWidgetHost(ctx, HOST_ID) {
+class AnukiWidgetHost(ctx: Context) : AppWidgetHost(ctx, HOST_ID) {
     override fun onCreateView(context: Context, appWidgetId: Int, appWidget: AppWidgetProviderInfo?): AppWidgetHostView =
-        NyangWidgetView(context)
+        AnukiWidgetView(context)
 
     companion object { const val HOST_ID = 2026 }
 }
 
 /** Widget frame that detects a long press even though the widget's own views consume touches. */
-class NyangWidgetView(ctx: Context) : AppWidgetHostView(ctx) {
+class AnukiWidgetView(ctx: Context) : AppWidgetHostView(ctx) {
     var item: HomeItem? = null
-    var onLongPress: ((NyangWidgetView) -> Unit)? = null
+    var onLongPress: ((AnukiWidgetView) -> Unit)? = null
     var lastRawX = 0f
         private set
     var lastRawY = 0f

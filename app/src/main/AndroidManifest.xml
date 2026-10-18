@@ -17,7 +17,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Nyang.Settings">
+        android:theme="@style/Theme.Anuki.Settings">
 
         <activity
             android:name=".HomeActivity"
@@ -29,7 +29,7 @@
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
-            android:theme="@style/Theme.Nyang.Home">
+            android:theme="@style/Theme.Anuki.Home">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -41,7 +41,7 @@
             android:name=".SettingsActivity"
             android:exported="true"
             android:label="@string/settings_name"
-            android:taskAffinity="com.nyang.launcher.settings">
+            android:taskAffinity="com.anuki.launcher.settings">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -9,7 +9,7 @@ import kotlin.reflect.KProperty
 
 /** All launcher settings. Every write bumps [version] so the home screen knows to rebind. */
 class Prefs(ctx: Context) {
-    val sp: SharedPreferences = ctx.getSharedPreferences("nyang", Context.MODE_PRIVATE)
+    val sp: SharedPreferences = ctx.getSharedPreferences("anuki", Context.MODE_PRIVATE)
 
     private fun intPref(key: String, def: Int) = object : ReadWriteProperty<Any?, Int> {
         override fun getValue(thisRef: Any?, property: KProperty<*>): Int = sp.getInt(key, def)

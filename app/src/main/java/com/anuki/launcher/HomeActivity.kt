@@ -1,4 +1,4 @@
-package com.nyang.launcher
+package com.anuki.launcher
 
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -51,7 +51,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     private lateinit var drawer: AppDrawerView
     private lateinit var folderView: FolderView
     private lateinit var drag: DragController
-    private lateinit var widgetHost: NyangWidgetHost
+    private lateinit var widgetHost: AnukiWidgetHost
     private lateinit var widgetManager: AppWidgetManager
 
     var iconSize = 0
@@ -69,7 +69,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         super.onCreate(savedInstanceState)
         setupWindow()
         widgetManager = AppWidgetManager.getInstance(this)
-        widgetHost = NyangWidgetHost(this)
+        widgetHost = AnukiWidgetHost(this)
         iconSize = (dp(54f) * prefs.iconScale / 100f).toInt()
         buildViews()
         setContentView(dragLayer)
@@ -199,8 +199,8 @@ class HomeActivity : Activity(), PagedView.Listener {
     private fun askDefaultHomeOnce() {
         if (Util.isDefaultHome(this)) return
         AlertDialog.Builder(this)
-            .setTitle("냥런처를 기본 홈 앱으로 쓸까요?")
-            .setMessage("홈 버튼을 눌렀을 때 냥런처가 열리게 돼요. 나중에 설정에서도 바꿀 수 있어요.")
+            .setTitle("아늑이 런처를 기본 홈 앱으로 쓸까요?")
+            .setMessage("홈 버튼을 눌렀을 때 아늑이 런처가 열리게 돼요. 나중에 설정에서도 바꿀 수 있어요.")
             .setPositiveButton("설정하기") { _, _ -> Util.requestDefaultHome(this, REQ_DEFAULT_HOME) }
             .setNegativeButton("나중에", null)
             .show()
@@ -314,7 +314,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     private fun makeWidgetView(item: HomeItem): View? {
         val info = try { widgetManager.getAppWidgetInfo(item.widgetId) } catch (_: Exception) { null } ?: return null
-        val hv = widgetHost.createView(this, item.widgetId, info) as? NyangWidgetView ?: return null
+        val hv = widgetHost.createView(this, item.widgetId, info) as? AnukiWidgetView ?: return null
         hv.item = item
         hv.tag = item
         hv.onLongPress = { w -> onItemLongPress(w, item, null, DragInfo.SRC_WORKSPACE, w.lastRawX, w.lastRawY) }
@@ -323,7 +323,7 @@ class HomeActivity : Activity(), PagedView.Listener {
                 val d = resources.displayMetrics.density
                 val w = ((r - l) / d).toInt(); val h = ((b - t) / d).toInt()
                 @Suppress("DEPRECATION")
-                try { (v as NyangWidgetView).updateAppWidgetSize(null, w, h, w, h) } catch (_: Exception) { }
+                try { (v as AnukiWidgetView).updateAppWidgetSize(null, w, h, w, h) } catch (_: Exception) { }
             }
         }
         return hv
@@ -345,7 +345,7 @@ class HomeActivity : Activity(), PagedView.Listener {
                         else -> 0
                     }
                     c.invalidate()
-                } else if (c is ViewGroup && c !is NyangWidgetView) walk(c)
+                } else if (c is ViewGroup && c !is AnukiWidgetView) walk(c)
             }
         }
         walk(dragLayer)
@@ -698,7 +698,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     companion object {
-        const val TAG = "Nyang"
+        const val TAG = "Anuki"
         const val REQ_PICK_WIDGET = 11
         const val REQ_BIND_WIDGET = 12
         const val REQ_CONFIG_WIDGET = 13

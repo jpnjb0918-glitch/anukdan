@@ -12,7 +12,7 @@ step() { echo "== $*" >> $LOG; }
 adb install -r "$APK" | tee -a $LOG
 # the stock launcher tends to ANR on CI emulators and covers the screen; switch it off
 adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher 2>&1 | tee -a $LOG
-adb shell cmd role add-role-holder --user 0 android.app.role.HOME com.nyang.launcher 2>&1 | tee -a $LOG
+adb shell cmd role add-role-holder --user 0 android.app.role.HOME com.anuki.launcher 2>&1 | tee -a $LOG
 adb shell cmd role get-role-holders --user 0 android.app.role.HOME 2>&1 | tee -a $LOG
 adb logcat -c
 adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME | tee -a $LOG
@@ -87,7 +87,7 @@ step "drawer -> home drag"
 adb shell input swipe 540 1500 540 400 200
 sleep 3
 dump drawer2
-A0=$(ui shots/drawer2.xml find "냥런처 설정")
+A0=$(ui shots/drawer2.xml find "아늑이 런처 설정")
 echo "drawer app=$A0" >> $LOG
 if [ -n "$A0" ]; then
   adb shell input draganddrop $A0 540 900 3000
@@ -181,13 +181,13 @@ adb shell input keyevent KEYCODE_HOME
 sleep 1
 
 step "badges"
-adb shell cmd notification allow_listener com.nyang.launcher/com.nyang.launcher.BadgeService 2>&1 | tee -a $LOG
+adb shell cmd notification allow_listener com.anuki.launcher/com.anuki.launcher.BadgeService 2>&1 | tee -a $LOG
 sleep 2
-adb shell cmd notification post -S bigtext -t "냥" smoke_test "배지 확인용 알림" 2>&1 | tee -a $LOG
+adb shell cmd notification post -S bigtext -t "아늑이" smoke_test "배지 확인용 알림" 2>&1 | tee -a $LOG
 sleep 3
 
 step "settings"
-adb shell am start -W -n com.nyang.launcher/.SettingsActivity | tee -a $LOG
+adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG
 sleep 3
 shot 13-settings
 adb shell input swipe 540 1800 540 600 300
@@ -202,7 +202,7 @@ sleep 2
 shot 15-page-swipe
 
 adb logcat -d -b crash > shots/crash.txt
-adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Nyang" | tail -300 > shots/logcat.txt
-adb shell pidof com.nyang.launcher > shots/pid.txt || echo "not running" > shots/pid.txt
+adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -300 > shots/logcat.txt
+adb shell pidof com.anuki.launcher > shots/pid.txt || echo "not running" > shots/pid.txt
 echo "done" >> $LOG
 exit 0
