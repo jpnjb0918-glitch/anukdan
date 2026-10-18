@@ -40,6 +40,11 @@ elif mode == 'anydesc':
         if n.get('content-desc') == sys.argv[3]:
             print(*center(n))
             break
+elif mode == 'descprefix':
+    for n in ET.parse(path).iter('node'):
+        if (n.get('content-desc') or '').startswith(sys.argv[3]):
+            print(*center(n))
+            break
 elif mode == 'index':
     i = int(sys.argv[3])
     if i < len(nodes):

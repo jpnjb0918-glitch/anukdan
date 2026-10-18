@@ -238,7 +238,8 @@ if open_icon_picker "Camera"; then
     sleep 4
     shot 18-document-picker
     dump docs
-    F=$(ui shots/docs.xml text anuki_test.png)
+    F=$(ui shots/docs.xml descprefix "anuki_test.png")
+    [ -z "$F" ] && F=$(ui shots/docs.xml text anuki_test.png)
     if [ -z "$F" ]; then
       R=$(ui shots/docs.xml anydesc "Show roots")
       [ -n "$R" ] && adb shell input tap $R && sleep 2
@@ -246,7 +247,8 @@ if open_icon_picker "Camera"; then
       D=$(ui shots/roots.xml text "Downloads")
       [ -n "$D" ] && adb shell input tap $D && sleep 3
       dump docs2
-      F=$(ui shots/docs2.xml text anuki_test.png)
+      F=$(ui shots/docs2.xml descprefix "anuki_test.png")
+      [ -z "$F" ] && F=$(ui shots/docs2.xml text anuki_test.png)
     fi
     echo "photo file=$F" >> $LOG
     if [ -n "$F" ]; then
