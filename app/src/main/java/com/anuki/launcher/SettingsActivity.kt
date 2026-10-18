@@ -75,7 +75,7 @@ class SettingsActivity : Activity() {
         action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 설치한 다른 아이콘 팩도 고를 수 있어요") {
             Dialogs.iconPackChooser(this) { build() }
         }
-        switch("모든 앱을 고양이 아이콘으로", "손으로 그린 고양이 아이콘(54종)이 없는 앱도 고양이 틀 아이콘으로 바꿔요 (15,322종, 없으면 원래 아이콘을 틀에 넣어요)", prefs.catPlate) { prefs.catPlate = it }
+        switch("모든 앱을 아늑단 아이콘으로", "손으로 그린 아늑단 아이콘(54종)이 없는 앱도 아늑단 틀 아이콘으로 바꿔요 (15,322종, 없으면 원래 아이콘을 틀에 넣어요)", prefs.catPlate) { prefs.catPlate = it }
         note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 고양이 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
         action("아늑이 런처 앱 아이콘", AppIcon.label(this)) {
             val opts = AppIcon.OPTIONS

@@ -571,8 +571,10 @@ adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService
 echo "badge service declared: $(adb shell dumpsys package com.anuki.launcher | grep -c BadgeService)" >> $LOG
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
 sleep 2
-NB=$(find_scroll "백업 파일 만들기")
-adb shell input swipe 540 900 540 1300 300
+RN=$(find_scroll "모든 앱을 아늑단 아이콘으로")
+echo "renamed row=$RN" >> $LOG
+NB=$(find_scroll "알림 배지")
+echo "badge section=$NB" >> $LOG
 sleep 1
 shot 37-standard-badge-note
 dump stdnote
