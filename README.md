@@ -10,6 +10,15 @@
 
 `main`에 올라갈 때마다 GitHub Actions가 APK를 새로 빌드해서 Releases에 올려요 (`.github/workflows/build.yml`).
 
+### 설치 파일 두 가지
+
+| 파일 | 차이 | 설치 |
+|---|---|---|
+| `anuki-launcher.apk` (기본판) | 알림 배지 없음 | 휴대폰에서 바로 설치 |
+| `anuki-launcher-badge.apk` (배지판) | 알림 배지 있음 (알림 접근 서비스 포함) | 휴대폰 브라우저·메신저·파일 앱으로 설치하면 Google Play 프로텍트가 "기기 보호를 위해 앱 차단됨"으로 막을 수 있어요 |
+
+Google은 브라우저·메신저·파일 관리자로 받은 앱이 알림 접근(`BIND_NOTIFICATION_LISTENER_SERVICE`), 접근성, SMS 읽기·받기 권한을 선언하면 일부 국가에서 설치를 자동으로 막아요([개발자 안내](https://developers.google.com/android/play-protect/warning-dev-guidance?hl=ko)). 배지는 알림 접근이 있어야만 셀 수 있어서, 이 기능만 배지판으로 나눴어요. 두 파일은 같은 앱(같은 서명)이라 하나만 설치하면 되고, 서로 덮어 설치할 수 있어요.
+
 ## 기능
 
 | 구역 | 기능 |

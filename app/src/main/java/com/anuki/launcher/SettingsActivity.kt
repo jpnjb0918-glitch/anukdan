@@ -96,9 +96,13 @@ class SettingsActivity : Activity() {
         note("'알림창 내리기'는 기기에 따라 동작하지 않을 수 있어요. '화면 끄기'는 처음에 기기 관리자 권한을 한 번 허용해야 하고, 이렇게 끈 뒤에는 지문·얼굴 대신 PIN을 입력해야 할 수 있어요.")
 
         section("알림 배지")
-        choice("배지 모양", listOf("off" to "끄기", "dot" to "점", "count" to "숫자"), prefs.badgeStyle) { prefs.badgeStyle = it }
-        action("알림 접근 권한", if (Badges.isAccessGranted(this)) "허용됨" else "허용 필요 — 눌러서 '아늑이 런처'를 켜 주세요") {
-            try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (_: Exception) { }
+        if (Badges.isSupported(this)) {
+            choice("배지 모양", listOf("off" to "끄기", "dot" to "점", "count" to "숫자"), prefs.badgeStyle) { prefs.badgeStyle = it }
+            action("알림 접근 권한", if (Badges.isAccessGranted(this)) "허용됨" else "허용 필요 — 눌러서 '아늑이 런처'를 켜 주세요") {
+                try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (_: Exception) { }
+            }
+        } else {
+            note("이 설치 파일(기본판)에는 알림 배지가 없어요. 알림을 읽는 기능이 있는 앱은 Google Play 프로텍트가 설치를 막기 때문이에요. 배지가 필요하면 배지판(anuki-launcher-badge.apk)을 설치하세요.")
         }
 
         section("백업")

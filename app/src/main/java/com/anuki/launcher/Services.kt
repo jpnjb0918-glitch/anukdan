@@ -36,6 +36,12 @@ object Badges {
 
     fun countFor(pkg: String, serial: Long): Int = counts["$pkg#$serial"] ?: 0
 
+    /** False in the standard build, which has no notification listener (see app/build.gradle.kts). */
+    fun isSupported(ctx: Context): Boolean = try {
+        ctx.packageManager.getServiceInfo(ComponentName(ctx, BadgeService::class.java), 0)
+        true
+    } catch (_: Exception) { false }
+
     fun isAccessGranted(ctx: Context): Boolean {
         val flat = Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners") ?: return false
         val me = ComponentName(ctx, BadgeService::class.java)

@@ -39,13 +39,28 @@ jobs:
         env:
           ANUKI_KEYSTORE_PASS: ${{ secrets.ANUKI_KEYSTORE_PASS || secrets.NYANG_KEYSTORE_PASS }}
         run: |
-          ./gradlew --no-daemon :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk anuki-launcher.apk
+          ./gradlew --no-daemon :app:assembleStandardRelease :app:assembleBadgeRelease
+          cp app/build/outputs/apk/standard/release/app-standard-release.apk anuki-launcher.apk
+          cp app/build/outputs/apk/badge/release/app-badge-release.apk anuki-launcher-badge.apk
+
+      # The standard APK must not declare a notification listener (Play Protect blocks sideloads that do)
+      - name: Check permissions in each APK
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          for f in anuki-launcher.apk anuki-launcher-badge.apk; do
+            echo "== $f"
+            "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$f" | grep -E "BIND_NOTIFICATION_LISTENER_SERVICE|BIND_ACCESSIBILITY_SERVICE|RECEIVE_SMS|READ_SMS" || echo "(none of the four)"
+          done
+          if "$BT/aapt2" dump xmltree --file AndroidManifest.xml anuki-launcher.apk | grep -q BIND_NOTIFICATION_LISTENER_SERVICE; then
+            echo "standard APK declares a notification listener"; exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: anuki-launcher-apk
-          path: anuki-launcher.apk
+          path: |
+            anuki-launcher.apk
+            anuki-launcher-badge.apk
 
       - name: Publish release
         env:
@@ -57,7 +72,11 @@ jobs:
           else
             NOTE="임시(디버그) 키로 서명했어요. 다음 버전을 설치하려면 먼저 지워야 할 수 있어요."
           fi
-          gh release create "$TAG" anuki-launcher.apk \
+          BODY="자동 빌드 (커밋 ${GITHUB_SHA::7}). $NOTE
+
+          - anuki-launcher.apk: 기본판. 휴대폰에서 내려받아 설치하세요. 알림 배지는 없어요.
+          - anuki-launcher-badge.apk: 알림 배지 포함판. 알림을 읽는 기능이 있어서 휴대폰에서 바로 설치하면 Google Play 프로텍트가 막을 수 있어요(일부 국가). 두 파일은 같은 앱이라 하나만 설치하세요."
+          gh release create "$TAG" anuki-launcher.apk anuki-launcher-badge.apk \
             --title "아늑이 런처 $TAG" \
-            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 anuki-launcher.apk를 내려받아 설치하세요. $NOTE" \
+            --notes "$BODY" \
             --latest

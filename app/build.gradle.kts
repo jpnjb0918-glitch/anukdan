@@ -31,6 +31,23 @@ android {
         }
     }
 
+    // Two builds of the same app (same id, same key):
+    //  standard: no notification listener. Google Play Protect blocks apps that declare one
+    //            (BIND_NOTIFICATION_LISTENER_SERVICE) when they are installed from a browser, messenger
+    //            or file manager in some countries, so this is the one people download.
+    //  badge:    adds the notification listener for app badges.
+    flavorDimensions += "badges"
+    productFlavors {
+        create("standard") {
+            dimension = "badges"
+            isDefault = true
+        }
+        create("badge") {
+            dimension = "badges"
+            versionNameSuffix = "-badge"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

@@ -3,7 +3,9 @@
 set -x
 mkdir -p shots
 LOG=shots/steps.txt
-APK=app/build/outputs/apk/debug/app-debug.apk
+# the badge build: it has everything the standard build has plus the badge service
+APK=app/build/outputs/apk/badge/debug/app-badge-debug.apk
+STD_APK=app/build/outputs/apk/standard/debug/app-standard-debug.apk
 shot() { adb exec-out screencap -p > "shots/$1.png"; }
 dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "shots/$1.xml" >/dev/null 2>&1; }
 ui() { python3 .github/scripts/ui.py "$@"; }
@@ -562,6 +564,22 @@ step "page swipe"
 adb shell input swipe 900 1200 150 1200 200
 sleep 2
 shot 15-page-swipe
+
+step "standard build (no badge service) installs over it and runs"
+adb install -r "$STD_APK" 2>&1 | tee -a $LOG
+adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG
+echo "badge service declared: $(adb shell dumpsys package com.anuki.launcher | grep -c BadgeService)" >> $LOG
+adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+sleep 2
+NB=$(find_scroll "백업 파일 만들기")
+adb shell input swipe 540 900 540 1300 300
+sleep 1
+shot 37-standard-badge-note
+dump stdnote
+grep -o "기본판[^\"]*" shots/stdnote.xml | head -1 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+shot 38-standard-home
 
 adb logcat -d -b crash > shots/crash.txt
 adb logcat -d | grep -E "AndroidRuntime|FATAL|ANR in|Anuki" | tail -3000 > shots/logcat.txt
