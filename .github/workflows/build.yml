@@ -1,0 +1,54 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Lint (report only)
+        run: ./gradlew --no-daemon lintDebug
+        continue-on-error: true
+
+      - name: Collect APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk nyang-launcher.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyang-launcher-apk
+          path: nyang-launcher.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" nyang-launcher.apk \
+            --title "냥런처 $TAG" \
+            --notes "자동 빌드 (커밋 ${GITHUB_SHA::7}). 휴대폰에서 nyang-launcher.apk를 내려받아 설치하세요." \
+            --latest

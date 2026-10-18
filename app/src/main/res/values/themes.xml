@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Nyang.Home" parent="@android:style/Theme.DeviceDefault.Wallpaper.NoTitleBar">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">#FF2E9497</item>
+    </style>
+
+    <style name="Theme.Nyang.Settings" parent="@android:style/Theme.Material.Light">
+        <item name="android:colorPrimary">#FF2E9497</item>
+        <item name="android:colorPrimaryDark">#FF1E6467</item>
+        <item name="android:colorAccent">#FF2E9497</item>
+    </style>
+</resources>
