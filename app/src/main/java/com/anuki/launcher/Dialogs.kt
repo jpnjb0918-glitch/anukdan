@@ -161,7 +161,7 @@ object Dialogs {
                 setTextColor(if (f.key == current) Palette.TEAL else 0xFF1A2B2C.toInt())
             })
             row.addView(TextView(a).apply {
-                text = "아늑단 고양이 런처 · 가나다 ABC 123"
+                text = "아늑이 런처 · 아늑단 가나다 ABC 123"
                 textSize = 16f
                 typeface = tf ?: android.graphics.Typeface.DEFAULT
                 setTextColor(0xFF1A2B2C.toInt())

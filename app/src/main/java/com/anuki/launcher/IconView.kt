@@ -19,6 +19,8 @@ import android.view.View
 class IconView(ctx: Context) : View(ctx) {
     var item: HomeItem? = null
     var app: AppEntry? = null
+    /** Which icon this view is waiting for (app key @ size), so a late background drawing can't land on a reused view. */
+    var iconKey: String? = null
 
     var icon: Bitmap? = null
         set(v) { field = v; invalidate() }

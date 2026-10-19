@@ -81,7 +81,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         setupWindow()
         widgetManager = AppWidgetManager.getInstance(this)
         widgetHost = AnukiWidgetHost(this)
-        iconSize = (dp(54f) * prefs.iconScale / 100f).toInt()
+        iconSize = icons.homeSize()
         buildViews()
         setContentView(dragLayer)
         apps.addListener(appsListener)
@@ -221,8 +221,9 @@ class HomeActivity : Activity(), PagedView.Listener {
             if (moved) model.save()
         }
         if (!prefs.firstRunDone && model.items.isEmpty()) askDefaultHomeOnce()
-        icons.preload(apps.all, iconSize)
         bindAll()
+        // the drawer's icons next, after the ones on screen
+        icons.preload(apps.all, iconSize)
     }
 
     private fun populateDefaults() {
@@ -263,9 +264,10 @@ class HomeActivity : Activity(), PagedView.Listener {
     private fun bindAll() {
         movingBg.apply(MovingWallpaper.launcherValue(this))
         if (!apps.loaded) return
+        val t0 = System.nanoTime()
         if (!prefs.firstRunDone && model.items.isEmpty()) populateDefaults()
         boundVersion = prefs.version
-        iconSize = (dp(54f) * prefs.iconScale / 100f).toInt()
+        iconSize = icons.homeSize()
         model.normalize(prefs.homeCols, prefs.homeRows, prefs.dockCount)
 
         val cur = workspace.currentPage
@@ -303,6 +305,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         indicator.current = workspace.currentPage
         if (drawer.isOpen) { drawer.applyTheme(); drawer.refresh() }
         folderView.folder?.let { f -> if (model.byId(f.id) != null) folderView.refresh() else folderView.close() }
+        if (LauncherApp.debug) LauncherApp.dlog("bindAll: ${model.items.size} items in ${(System.nanoTime() - t0) / 1_000_000}ms")
     }
 
     fun workspaceAllPages(f: (CellLayout) -> Unit) {
@@ -332,7 +335,10 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.item = item
         v.tag = item
         v.iconSize = iconSize
-        v.icon = icons.appIcon(app, iconSize)
+        // drawn on a background thread when not ready yet; the view fills in when it arrives
+        val want = app.key + "@" + iconSize
+        v.iconKey = want
+        v.icon = icons.appIconAsync(app, iconSize) { bmp -> if (v.iconKey == want) v.icon = bmp }
         v.label = app.label
         v.showLabel = labels
         v.labelColor = if (onPanel) Palette.text(this) else Color.WHITE

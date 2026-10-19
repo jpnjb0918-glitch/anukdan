@@ -111,15 +111,22 @@ class Prefs(ctx: Context) {
     }
 
     // ------------------------------------------------------------ per-app icon colours
-    fun appIconColor(key: String): Int? = try {
-        val o = JSONObject(sp.getString("icon_colors", "{}") ?: "{}")
-        if (o.has(key)) o.getInt(key) else null
-    } catch (_: Exception) { null }
+    @Volatile private var iconColorsCache: Map<String, Int>? = null
+
+    /** Per-app colour (parsed once, not for every icon drawn). */
+    fun appIconColor(key: String): Int? {
+        val m = iconColorsCache ?: try {
+            val o = JSONObject(sp.getString("icon_colors", "{}") ?: "{}")
+            o.keys().asSequence().associateWith { o.getInt(it) }
+        } catch (_: Exception) { emptyMap() }.also { iconColorsCache = it }
+        return m[key]
+    }
 
     fun setAppIconColor(key: String, color: Int?) {
         val o = try { JSONObject(sp.getString("icon_colors", "{}") ?: "{}") } catch (_: Exception) { JSONObject() }
         if (color == null) o.remove(key) else o.put(key, color)
         sp.edit().putString("icon_colors", o.toString()).apply()
+        iconColorsCache = null
         bump()
     }
 
@@ -187,6 +194,7 @@ class Prefs(ctx: Context) {
         }
         ed.apply()
         overridesCache = null
+        iconColorsCache = null
         bump()
     }
 }

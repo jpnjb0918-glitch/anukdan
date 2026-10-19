@@ -1307,5 +1307,9 @@ adb logcat -d | grep -E "ANR in" > shots/anr.txt
 PID=$(adb shell pidof com.anuki.launcher | tr -d '\r')
 echo "${PID:-not running}" > shots/pid.txt
 [ -n "$PID" ] && adb logcat -d --pid=$PID | grep -E "Skipped [0-9]+ frames|Davey" > shots/jank.txt
+
+step "speed comparison (previous release vs this build)"
+bash .github/scripts/perf.sh "$STD_APK" >> $LOG 2>&1
+adb logcat -d -b crash > shots/crash-perf.txt
 echo "done" >> $LOG
 exit 0

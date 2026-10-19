@@ -17,6 +17,7 @@ class LauncherApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        debug = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         prefs = Prefs(this)
         icons = IconProvider(this)
         apps = AppRepository(this)
@@ -30,9 +31,13 @@ class LauncherApp : Application() {
         lateinit var instance: LauncherApp
             private set
 
-        /** Diagnostic log for the emulator check; only debug builds write it. */
+        /** Debug builds (the emulator check) write diagnostic logs; release builds skip them. */
+        var debug = false
+            private set
+
+        /** Diagnostic log for the emulator check. Wrap busy call sites in `if (debug)` so release builds don't even build the text. */
         fun dlog(msg: String) {
-            if (::instance.isInitialized && (instance.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.d("Anuki", msg)
+            if (debug) Log.d("Anuki", msg)
         }
     }
 }

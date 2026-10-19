@@ -14,11 +14,14 @@ import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.LruCache
 import java.util.Calendar
+import java.util.concurrent.Executors
 
 /**
  * Cat icon pack.
@@ -54,7 +57,48 @@ class IconProvider(private val ctx: Context) {
 
     fun invalidate() {
         cacheDay = today()
+        generation++
         cache.evictAll()
+    }
+
+    // ---- icons drawn off the main thread
+    /** Bumped whenever the cache is reset, so work started before a reset can't put old pictures back. */
+    @Volatile private var generation = 0
+    private val main = Handler(Looper.getMainLooper())
+    private val worker = Executors.newFixedThreadPool(2) { r ->
+        Thread(r, "anuki-icons").apply { priority = Thread.NORM_PRIORITY - 1; isDaemon = true }
+    }
+    private val pending = HashMap<String, MutableList<(Bitmap) -> Unit>>()
+
+    /** Icon size on the home screen, dock and drawer in px (54dp × 아이콘 크기). */
+    fun homeSize(): Int {
+        val d = ctx.resources.displayMetrics.density
+        return ((54f * d + 0.5f).toInt() * LauncherApp.instance.prefs.iconScale / 100f).toInt()
+    }
+
+    /** The cached icon, or null if it hasn't been drawn yet. */
+    fun cached(app: AppEntry, size: Int): Bitmap? = cache.get(app.key + "@" + size)
+
+    /**
+     * The icon right away when it's ready; otherwise null, and it is drawn on a background thread and handed to
+     * [done] on the main thread (requests for the same icon share one drawing).
+     */
+    fun appIconAsync(app: AppEntry, size: Int, done: (Bitmap) -> Unit): Bitmap? {
+        val k = app.key + "@" + size
+        cache.get(k)?.let { return it }
+        val gen = generation
+        val pk = "$k#$gen"
+        synchronized(pending) {
+            val waiting = pending[pk]
+            if (waiting != null) { waiting += done; return null }
+            pending[pk] = mutableListOf(done)
+        }
+        worker.execute {
+            val bmp = if (gen == generation) try { appIcon(app, size) } catch (_: Throwable) { null } else null
+            val callbacks = synchronized(pending) { pending.remove(pk) } ?: return@execute
+            if (bmp != null && gen == generation) main.post { if (gen == generation) for (cb in callbacks) cb(bmp) }
+        }
+        return null
     }
 
     private var cacheDay = today()
@@ -67,9 +111,27 @@ class IconProvider(private val ctx: Context) {
         return true
     }
 
-    fun onAppsChanged(apps: List<AppEntry>) {
-        rebuildAutoMap(apps)
-        cache.evictAll()
+    /**
+     * The app list changed. Only icons that can look different are dropped: apps in [changed] (installed, updated,
+     * removed) and apps whose hand-made icon mapping moved (e.g. a new default browser). Everything when [changed] is
+     * null or the active icon pack itself changed.
+     */
+    fun onAppsChanged(apps: List<AppEntry>, changed: Set<String>? = null, newMap: Map<String, String>? = null) {
+        val before = autoMap
+        autoMap = newMap ?: computeAutoMap(apps)
+        if (changed == null || mode() in changed) {
+            invalidate()
+            return
+        }
+        val after = autoMap
+        val drop = HashSet(changed)
+        for (p in before.keys + after.keys) if (before[p] != after[p]) drop += p
+        if (drop.isEmpty()) return
+        var n = 0
+        for (k in cache.snapshot().keys) {
+            if (k.substringBefore('/') in drop) { cache.remove(k); n++ }
+        }
+        if (LauncherApp.debug) LauncherApp.dlog("icon cache: dropped $n for ${drop.size} changed package(s)")
     }
 
     /** Package that the auto-mapping gave [icon] to, e.g. "web-browser" -> com.android.chrome. */
@@ -83,7 +145,8 @@ class IconProvider(private val ctx: Context) {
         return if (pkg == "android" || pkg.contains("resolver", ignoreCase = true)) null else pkg
     }
 
-    private fun rebuildAutoMap(apps: List<AppEntry>) {
+    /** Which installed app gets which hand-made icon (asks the system for default apps: call off the main thread). */
+    fun computeAutoMap(apps: List<AppEntry>): Map<String, String> {
         val installed = apps.map { it.packageName }.toHashSet()
         val map = LinkedHashMap<String, String>()
         val claimed = HashSet<String>()
@@ -109,7 +172,7 @@ class IconProvider(private val ctx: Context) {
         claim(defaultPackage(Intent(Settings.ACTION_SETTINGS)), "settings")
         claim(defaultPackage(Intent(AlarmClock.ACTION_SHOW_ALARMS)), "clock")
         for ((pkg, icon) in KNOWN) claim(pkg, icon)
-        autoMap = map
+        return map
     }
 
     /** Active icon source: "builtin" (cat icons), "none" (original icons) or an icon pack's package name. */
@@ -131,8 +194,9 @@ class IconProvider(private val ctx: Context) {
     fun appIcon(app: AppEntry, size: Int): Bitmap {
         val k = app.key + "@" + size
         cache.get(k)?.let { return it }
+        val gen = generation
         val bmp = try { render(app, size) } catch (_: Exception) { Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888) }
-        cache.put(k, bmp)
+        if (gen == generation) cache.put(k, bmp)
         return bmp
     }
 
@@ -164,14 +228,14 @@ class IconProvider(private val ctx: Context) {
                 val cat = autoMap[app.packageName]?.let { catAsset(it, col) }
                 when {
                     cat != null -> {
-                        LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> hand ${autoMap[app.packageName]}")
+                        if (LauncherApp.debug) LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> hand ${autoMap[app.packageName]}")
                         scaled(cat, size)
                     }
                     !prefs.catPlate -> originalIcon(app, size)
                     else -> {
                         val name = LineIcons.nameFor(ctx, app.component)
                         val made = name?.let { LineIcons.render(ctx, it, size, app.packageName, col) }
-                        LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> " +
+                        if (LauncherApp.debug) LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> " +
                             if (made != null) "drawing $name (${LineIcons.tileFor(app.packageName)})" else "own icon in frame")
                         made ?: run {
                             val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
@@ -184,12 +248,12 @@ class IconProvider(private val ctx: Context) {
                 val pack = IconPacks.get(ctx, m)
                 val d = pack?.iconFor(app.component, density)
                 if (d != null) {
-                    LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> pack")
+                    if (LauncherApp.debug) LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> pack")
                     drawableToBitmap(d, size)
                 } else {
                     val orig = originalIcon(app, size)
                     val composed = pack?.compose(orig, size, app.key.hashCode(), density)
-                    LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> " + if (composed != null) "composed" else "original")
+                    if (LauncherApp.debug) LauncherApp.dlog("pack icon ${app.component.flattenToShortString()} -> " + if (composed != null) "composed" else "original")
                     composed ?: orig
                 }
             }
@@ -213,7 +277,8 @@ class IconProvider(private val ctx: Context) {
         val cy = size * 0.655f
         val xs = floatArrayOf(0.28f, 0.5f, 0.72f)
         for ((i, app) in contents.take(3).withIndex()) {
-            val icon = appIcon(app, mini.toInt().coerceAtLeast(8))
+            // the full-size icon is usually drawn already: shrink that instead of drawing a new small one
+            val icon = cache.get(app.key + "@" + homeSize()) ?: appIcon(app, mini.toInt().coerceAtLeast(8))
             val cx = size * xs[i]
             c.drawBitmap(icon, null, RectF(cx - mini / 2, cy - mini / 2, cx + mini / 2, cy + mini / 2), paint)
         }
@@ -231,11 +296,9 @@ class IconProvider(private val ctx: Context) {
         return b
     }
 
-    /** Warm the cache off the main thread so the drawer opens smoothly. */
+    /** Warm the cache off the main thread so the drawer opens smoothly (queued after what's on screen). */
     fun preload(apps: List<AppEntry>, size: Int) {
-        Thread {
-            for (a in apps) try { appIcon(a, size) } catch (_: Exception) { }
-        }.start()
+        for (a in apps) appIconAsync(a, size) { }
     }
 
     companion object {

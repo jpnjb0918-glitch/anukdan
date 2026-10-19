@@ -542,6 +542,12 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
 
     fun refresh() {
         if (visibility != VISIBLE) return
+        val t0 = System.nanoTime()
+        refreshNow()
+        if (LauncherApp.debug) LauncherApp.dlog("drawer refresh: ${(System.nanoTime() - t0) / 1_000_000}ms")
+    }
+
+    private fun refreshNow() {
         val list = ordered()
         val searching = search.text.isNotBlank()
         var style = act.prefs.drawerStyle

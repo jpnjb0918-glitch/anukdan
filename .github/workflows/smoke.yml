@@ -11,7 +11,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -28,6 +28,23 @@ jobs:
           ./gradlew --no-daemon :app:lintBadgeDebug || true
           mkdir -p shots
           cp app/build/reports/lint-results-badgeDebug.txt shots/lint.txt || echo "no lint report" > shots/lint.txt
+
+      # The previous release, built the same way (debug), for the speed comparison at the end of the check (perf.sh)
+      - name: Build the previous release for the speed comparison
+        continue-on-error: true
+        run: |
+          mkdir -p perf
+          for T in $(git ls-remote --tags origin 'refs/tags/v1.0.*' | awk '{print $2}' | grep -v '\^{}' | sed 's#refs/tags/##' | sort -t. -k3 -n -r | head -5); do
+            git fetch --quiet --depth=1 origin "refs/tags/$T:refs/tags/$T" || continue
+            if [ "$(git rev-list -n1 "$T")" != "$GITHUB_SHA" ]; then BASE=$T; break; fi
+          done
+          echo "baseline: ${BASE:-none}"
+          [ -n "$BASE" ] || exit 0
+          git worktree add ../base "$BASE"
+          (cd ../base && ./gradlew --no-daemon --quiet :app:assembleStandardDebug)
+          cp ../base/app/build/outputs/apk/standard/debug/app-standard-debug.apk perf/base.apk
+          echo "$BASE" > perf/base-tag.txt
+          ls -la perf
 
       # A real, published icon pack to try alongside the home-made test pack.
       # Arcticons (GPL-3.0) from F-Droid; the launcher must read it the way Nova/ADW do.
