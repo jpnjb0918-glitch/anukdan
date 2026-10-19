@@ -96,7 +96,7 @@ class SettingsActivity : Activity() {
                     build()
                 }.setNegativeButton("취소", null).show()
         }
-        action("배경화면", "아늑단 배경 3종 또는 내 사진") { Dialogs.wallpaper(this) }
+        action("배경화면", "아늑단 배경 3종 또는 내 사진 · 움직이는 배경: ${MovingWallpaper.label(this)}") { Dialogs.wallpaper(this) }
 
         section("제스처")
         gesture("위로 쓸기", prefs.gestureUp, prefs.gestureUpApp) { a, k -> prefs.gestureUpApp = k; prefs.gestureUp = a }
@@ -268,6 +268,7 @@ class SettingsActivity : Activity() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
+            MovingWallpaper.REQ_PICK -> if (resultCode == RESULT_OK) data?.data?.let { MovingWallpaper.onPicked(this, it) }
             REQ_BACKUP -> {
                 val ok = try {
                     val o = JSONObject().put("app", "anuki-launcher").put("version", 1)

@@ -726,6 +726,78 @@ adb shell input swipe 900 1200 150 1200 200
 sleep 2
 shot 15-page-swipe
 
+step "moving background (pattern, video, GIF)"
+adb push .github/scripts/test_motion.mp4 /sdcard/Download/anuki_motion.mp4 | tee -a $LOG
+adb push .github/scripts/test_motion.gif /sdcard/Download/anuki_motion.gif | tee -a $LOG
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/anuki_motion.mp4 >/dev/null 2>&1
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/anuki_motion.gif >/dev/null 2>&1
+open_wallpaper_dialog() {
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  scroll_top
+  local W=$(find_scroll "배경화면")
+  echo "wallpaper row=$W" >> $LOG
+  [ -z "$W" ] && return 1
+  adb shell input tap $W
+  sleep 2
+  dump wpd
+  return 0
+}
+# in the system file picker, open the file whose name starts with $1
+pick_doc() {
+  dump docsm
+  local F=$(ui shots/docsm.xml descprefix "$1")
+  [ -z "$F" ] && F=$(ui shots/docsm.xml text "$1")
+  if [ -z "$F" ]; then
+    local R=$(ui shots/docsm.xml anydesc "Show roots")
+    [ -n "$R" ] && adb shell input tap $R && sleep 2
+    dump rootsm
+    local D=$(ui shots/rootsm.xml text "Downloads")
+    [ -n "$D" ] && adb shell input tap $D && sleep 3
+    dump docsm2
+    F=$(ui shots/docsm2.xml descprefix "$1")
+    [ -z "$F" ] && F=$(ui shots/docsm2.xml text "$1")
+  fi
+  echo "picked $1 at=$F" >> $LOG
+  [ -n "$F" ] && adb shell input tap $F
+}
+if open_wallpaper_dialog; then
+  grep -o 'text="움직이는 배경[^"]*"' shots/wpd.xml | head -1 >> $LOG
+  O=$(ui shots/wpd.xml text "아늑단 패턴 흐르기")
+  [ -n "$O" ] && adb shell input tap $O
+  sleep 1
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  shot 50-moving-pattern-a
+  sleep 2
+  shot 50-moving-pattern-b
+fi
+for kind in mp4 gif; do
+  if open_wallpaper_dialog; then
+    O=$(ui shots/wpd.xml text "내 동영상·GIF 고르기")
+    [ -n "$O" ] && adb shell input tap $O
+    sleep 4
+    shot 51-moving-picker-$kind
+    pick_doc "anuki_motion.$kind"
+    sleep 5
+    adb shell input keyevent KEYCODE_HOME
+    sleep 4
+    shot 52-moving-$kind-a
+    sleep 1
+    shot 52-moving-$kind-b
+  fi
+done
+if open_wallpaper_dialog; then
+  O=$(ui shots/wpd.xml text "움직이는 배경 끄기")
+  [ -n "$O" ] && adb shell input tap $O
+  sleep 1
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  shot 53-moving-off
+fi
+adb logcat -d | grep -E "moving bg" | tail -20 >> $LOG
+adb shell run-as com.anuki.launcher ls -la files/moving >> $LOG 2>&1
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

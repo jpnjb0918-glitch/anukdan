@@ -57,6 +57,7 @@ class Prefs(ctx: Context) {
     var catIcons by boolPref("cat_icons", true)
     var catPlate by boolPref("cat_plate", true)
     var iconPack by strPref("icon_pack", "builtin")   // builtin | none | icon pack package name
+    var movingBg by strPref("moving_bg", "")          // "" | pattern | video:<file> | anim:<file> (see MovingWallpaper)
 
     // badges: off | dot | count
     var badgeStyle by strPref("badges", "dot")

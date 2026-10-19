@@ -362,10 +362,12 @@ object Dialogs {
     )
 
     fun wallpaper(a: Activity) {
+        val box = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(4f))
         }
+        box.addView(row)
         var dialog: AlertDialog? = null
         for ((path, name) in WALLPAPERS) {
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
@@ -382,8 +384,41 @@ object Dialogs {
             col.addView(TextView(a).apply { text = name; textSize = 12f; gravity = Gravity.CENTER; setPadding(0, a.dp(6f), 0, 0) })
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        dialog = AlertDialog.Builder(a).setTitle("배경화면").setView(row)
+        // moving backgrounds: drawn by the launcher behind its home screen (see MovingWallpaper)
+        val prefs = LauncherApp.instance.prefs
+        box.addView(TextView(a).apply {
+            text = "움직이는 배경 (지금: ${MovingWallpaper.label(a)})"
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(a.dp(20f), a.dp(14f), a.dp(20f), a.dp(2f))
+        })
+        box.addView(TextView(a).apply {
+            text = "아늑이 런처 홈 화면에서만 움직여요. 잠금 화면은 그대로예요."
+            textSize = 12f
+            alpha = 0.7f
+            setPadding(a.dp(20f), 0, a.dp(20f), a.dp(4f))
+        })
+        fun option(label: String, enabled: Boolean = true, onClick: () -> Unit) = box.addView(TextView(a).apply {
+            text = label
+            textSize = 16f
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.4f
+            setPadding(a.dp(20f), a.dp(12f), a.dp(20f), a.dp(12f))
+            setOnClickListener { dialog?.dismiss(); onClick() }
+        })
+        option("아늑단 패턴 흐르기") {
+            MovingWallpaper.set(MovingWallpaper.PATTERN, a)
+            Toast.makeText(a, "움직이는 배경을 켰어요. 홈 화면에서 보여요.", Toast.LENGTH_SHORT).show()
+        }
+        option("내 동영상·GIF 고르기") { MovingWallpaper.pick(a) }
+        option("움직이는 배경 끄기", enabled = prefs.movingBg.isNotEmpty()) {
+            MovingWallpaper.set("", a)
+            Toast.makeText(a, "움직이는 배경을 껐어요", Toast.LENGTH_SHORT).show()
+        }
+        dialog = AlertDialog.Builder(a).setTitle("배경화면").setView(android.widget.ScrollView(a).apply { addView(box) })
             .setNeutralButton("다른 사진 고르기") { _, _ ->
+                // a still picture only shows once the moving background is off
+                if (prefs.movingBg.isNotEmpty()) MovingWallpaper.set("", a)
                 try { a.startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "배경화면 고르기")) } catch (_: Exception) { }
             }
             .setNegativeButton("닫기", null).show()
@@ -399,7 +434,11 @@ object Dialogs {
                         a.assets.open(path).use { WallpaperManager.getInstance(a).setStream(it, null, true, flags) }
                         true
                     } catch (_: Exception) { false }
-                    main.post { Toast.makeText(a, if (ok) "배경화면을 바꿨어요" else "배경화면을 바꾸지 못했어요", Toast.LENGTH_SHORT).show() }
+                    main.post {
+                        // the still picture only shows once the moving background is off
+                        if (ok && LauncherApp.instance.prefs.movingBg.isNotEmpty()) MovingWallpaper.set("", a)
+                        Toast.makeText(a, if (ok) "배경화면을 바꿨어요" else "배경화면을 바꾸지 못했어요", Toast.LENGTH_SHORT).show()
+                    }
                 }.start()
             }.show()
     }

@@ -55,6 +55,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     private lateinit var drag: DragController
     private lateinit var widgetHost: AnukiWidgetHost
     private lateinit var widgetManager: AppWidgetManager
+    private lateinit var movingBg: MovingWallpaper.Host
 
     var iconSize = 0
         private set
@@ -96,6 +97,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     override fun onDestroy() {
+        movingBg.release()
         try { unregisterReceiver(dateReceiver) } catch (_: Exception) { }
         apps.removeListener(appsListener)
         Badges.listeners -= badgeListener
@@ -112,8 +114,15 @@ class HomeActivity : Activity(), PagedView.Listener {
         try { widgetHost.stopListening() } catch (_: Exception) { }
     }
 
+    override fun onPause() {
+        super.onPause()
+        movingBg.onHomeVisible(false)
+    }
+
     override fun onResume() {
         super.onResume()
+        movingBg.apply(prefs.movingBg)
+        movingBg.onHomeVisible(true)
         if (apps.loaded && prefs.version != boundVersion) {
             icons.invalidate()
             bindAll()
@@ -141,6 +150,9 @@ class HomeActivity : Activity(), PagedView.Listener {
         dragLayer = DragLayer(this)
         drag = DragController(this)
         dragLayer.controller = drag
+
+        movingBg = MovingWallpaper.Host(this)
+        dragLayer.addView(movingBg, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         workspace = PagedView(this).apply { listener = this@HomeActivity }
@@ -245,6 +257,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     private fun bindAll() {
+        movingBg.apply(prefs.movingBg)
         if (!apps.loaded) return
         if (!prefs.firstRunDone && model.items.isEmpty()) populateDefaults()
         boundVersion = prefs.version
@@ -739,6 +752,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             REQ_BIND_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) configureOrPlace(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
             REQ_PICK_PHOTO -> if (resultCode == RESULT_OK) data?.data?.let { onPhotoPicked(it) }
+            MovingWallpaper.REQ_PICK -> if (resultCode == RESULT_OK) data?.data?.let { MovingWallpaper.onPicked(this, it) }
             REQ_CONFIG_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) placeWidget(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
         }
