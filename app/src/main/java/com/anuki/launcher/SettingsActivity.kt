@@ -81,6 +81,13 @@ class SettingsActivity : Activity() {
 
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
+        action("앱 이름 글자 크기", Dialogs.labelSizeLabel(this)) {
+            Dialogs.labelSize(this, prefs.labelPx) { v ->
+                prefs.labelPx = v
+                LauncherApp.dlog("label size -> ${if (v == 0) "기본 (${IconView.defaultLabelPx(this)}px)" else "${v}px"}")
+                build()
+            }
+        }
         choice("테마 (앱 서랍·폴더)", listOf("auto" to "시스템 따라가기", "light" to "밝게", "dark" to "어둡게"), prefs.theme) { prefs.theme = it }
         action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 설치한 다른 아이콘 팩도 고를 수 있어요") {
             Dialogs.iconPackChooser(this) { build() }

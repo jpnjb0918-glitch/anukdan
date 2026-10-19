@@ -38,9 +38,19 @@ class IconView(ctx: Context) : View(ctx) {
     var lastRawY = 0f
         private set
 
+    /** App name size in pixels; 0 = 기본 (12sp, 16sp in the list style, following the phone's font size). */
+    var labelPx = LauncherApp.instance.prefs.labelPx
+        set(v) {
+            if (field == v) return
+            field = v
+            textPaint.textSize = labelSize(context, v, false)
+            rowText.textSize = labelSize(context, v, true)
+            requestLayout(); invalidate()
+        }
+
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics)
+        textSize = labelSize(ctx, labelPx, false)
     }
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val badgeFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFEC7474.toInt() }
@@ -113,7 +123,7 @@ class IconView(ctx: Context) : View(ctx) {
 
     private val rowText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.LEFT
-        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 16f, resources.displayMetrics)
+        textSize = labelSize(ctx, labelPx, true)
     }
 
     private fun drawBadge(canvas: Canvas) {
@@ -138,4 +148,31 @@ class IconView(ctx: Context) : View(ctx) {
     }
 
     fun dp(v: Float) = v * resources.displayMetrics.density
+
+    companion object {
+        const val MIN_LABEL_PX = 8
+        const val MAX_LABEL_PX = 80
+
+        /** The 기본 app name size in pixels on this phone (12sp, so it follows the phone's font size setting). */
+        fun defaultLabelPx(ctx: Context): Int =
+            (TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12f, ctx.resources.displayMetrics) + 0.5f).toInt()
+
+        fun labelSize(ctx: Context, px: Int, row: Boolean): Float =
+            if (px > 0) px.toFloat()
+            else TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, if (row) 16f else 12f, ctx.resources.displayMetrics)
+
+        /** Height of one line of app name at [px] (0 = 기본). */
+        fun labelLine(ctx: Context, px: Int, row: Boolean = false): Float =
+            TextPaint().apply { textSize = labelSize(ctx, px, row) }.fontSpacing
+
+        /**
+         * Extra row height under the icon for the label, in pixels: [baseDp] at the 기본 size,
+         * growing or shrinking with the chosen size so bigger names are not cut off.
+         */
+        fun labelRowExtra(ctx: Context, px: Int, baseDp: Float): Int {
+            val base = baseDp * ctx.resources.displayMetrics.density
+            val diff = labelLine(ctx, px) - labelLine(ctx, 0)
+            return (base + diff).coerceAtLeast(base * 0.6f).toInt()
+        }
+    }
 }

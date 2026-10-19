@@ -335,6 +335,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.showLabel = labels
         v.labelColor = if (onPanel) Palette.text(this) else Color.WHITE
         v.labelShadow = !onPanel
+        v.labelPx = prefs.labelPx
         v.badgeStyle = prefs.badgeStyle
         v.badge = Badges.countFor(app.packageName, app.serial)
         v.setOnClickListener { launch(app, v) }
@@ -351,6 +352,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.icon = icons.folderIcon(item.color, contents, iconSize)
         v.label = item.title
         v.showLabel = labels
+        v.labelPx = prefs.labelPx
         v.badgeStyle = prefs.badgeStyle
         v.badge = contents.sumOf { Badges.countFor(it.packageName, it.serial) }
         v.setOnClickListener { openFolder(item) }

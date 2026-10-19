@@ -395,6 +395,128 @@ object Dialogs {
             .setNegativeButton("취소", null).show()
     }
 
+    // ------------------------------------------------------------ app name size
+    /**
+     * App name size in pixels with a live preview (real apps at the home screen's cell width):
+     * slider, −/+ one pixel at a time, or type the number. Picks 0 for 기본 (12sp, follows the phone's font size).
+     */
+    fun labelSize(a: Activity, current: Int, onPick: (Int) -> Unit) {
+        val app = LauncherApp.instance
+        val prefs = app.prefs
+        val def = IconView.defaultLabelPx(a)
+        var px = if (current > 0) current else def
+        var touched = false
+        val box = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(20f), a.dp(12f), a.dp(20f), 0) }
+
+        val dm = a.resources.displayMetrics
+        val iconSize = (a.dp(54f) * prefs.iconScale / 100f).toInt()
+        val cellW = dm.widthPixels / prefs.homeCols.coerceAtLeast(1)
+        val avail = minOf((dm.widthPixels * 0.85f).toInt(), a.dp(560f)) - a.dp(56f)
+        val n = (avail / maxOf(1, cellW)).coerceIn(1, 4)
+        val preview = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = Palette.rounded(Palette.TEAL, a.dp(12f).toFloat())
+            setPadding(0, a.dp(10f), 0, a.dp(10f))
+        }
+        val views = app.apps.all.take(n).map { e ->
+            IconView(a).apply {
+                this.iconSize = iconSize
+                icon = app.icons.appIcon(e, iconSize)
+                label = e.label
+                labelPx = px
+                isClickable = false
+                isLongClickable = false
+            }
+        }
+        for (v in views) preview.addView(v, LinearLayout.LayoutParams(cellW, ViewGroup.LayoutParams.WRAP_CONTENT))
+        box.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val number = EditText(a).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setText(px.toString())
+            textSize = 22f
+            setTextColor(Palette.TEAL)
+            gravity = Gravity.CENTER
+            minEms = 2
+            contentDescription = "글자 크기 숫자"
+        }
+        val tag = TextView(a).apply { textSize = 13f; alpha = 0.7f; setPadding(a.dp(8f), 0, 0, 0) }
+        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, a.dp(12f), 0, 0) }
+        head.addView(number)
+        head.addView(TextView(a).apply { text = "px"; textSize = 16f })
+        head.addView(tag)
+        box.addView(head)
+
+        val seek = android.widget.SeekBar(a).apply {
+            min = IconView.MIN_LABEL_PX
+            max = IconView.MAX_LABEL_PX
+            progress = px
+            contentDescription = "글자 크기"
+        }
+        var syncing = false
+        fun set(v: Int, from: String) {
+            px = v.coerceIn(IconView.MIN_LABEL_PX, IconView.MAX_LABEL_PX)
+            syncing = true
+            if (from != "seek") seek.progress = px
+            if (from != "text") { number.setText(px.toString()); number.setSelection(number.text.length) }
+            syncing = false
+            tag.text = if (px == def) "(기본과 같은 크기)" else ""
+            for (iv in views) iv.labelPx = px
+        }
+        fun stepButton(t: String, desc: String, d: Int) =
+            android.widget.Button(a, null, android.R.attr.borderlessButtonStyle).apply {
+                text = t
+                textSize = 22f
+                contentDescription = desc
+                minWidth = 0; minimumWidth = a.dp(48f)
+                setOnClickListener { touched = true; set(px + d, "button") }
+            }
+        val controls = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        controls.addView(stepButton("−", "글자 1픽셀 작게", -1))
+        controls.addView(seek, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        controls.addView(stepButton("+", "글자 1픽셀 크게", 1))
+        box.addView(controls)
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                if (!syncing) { touched = true; set(p, "seek") }
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        number.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(t: CharSequence?, st: Int, c: Int, af: Int) {}
+            override fun onTextChanged(t: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) {
+                if (syncing) return
+                val v = e?.toString()?.toIntOrNull() ?: return
+                if (v in IconView.MIN_LABEL_PX..IconView.MAX_LABEL_PX) { touched = true; set(v, "text") }
+            }
+        })
+        box.addView(TextView(a).apply {
+            text = "${IconView.MIN_LABEL_PX}~${IconView.MAX_LABEL_PX}px, 1픽셀씩 정할 수 있어요. 숫자를 눌러 직접 써도 돼요.\n" +
+                "기본은 휴대폰의 글꼴 크기 설정을 따라가요(이 휴대폰에서 지금 ${def}px). 숫자로 정하면 휴대폰 글꼴 크기와 상관없이 그 크기로 보여요.\n" +
+                "홈 화면·폴더·앱 서랍의 앱 이름에 모두 적용돼요."
+            textSize = 12.5f
+            alpha = 0.75f
+            setPadding(0, a.dp(8f), 0, a.dp(8f))
+        })
+        set(px, "init")
+
+        AlertDialog.Builder(a).setTitle("앱 이름 글자 크기")
+            .setView(android.widget.ScrollView(a).apply { addView(box) })
+            .setPositiveButton("확인") { _, _ -> onPick(if (touched) px else current) }
+            .setNeutralButton("기본으로") { _, _ -> onPick(0) }
+            .setNegativeButton("취소", null).show()
+    }
+
+    fun labelSizeLabel(a: Activity): String {
+        val px = LauncherApp.instance.prefs.labelPx
+        return if (px == 0) "기본 (지금 ${IconView.defaultLabelPx(a)}px · 휴대폰 글꼴 크기를 따라가요)"
+        else "${px}px · 홈 화면·폴더·앱 서랍의 앱 이름"
+    }
+
     /** Frame for a photo icon. */
     fun photoStyle(a: Activity, onPick: (String) -> Unit) {
         AlertDialog.Builder(a).setTitle("사진 아이콘 모양")

@@ -203,7 +203,7 @@ class FolderView(private val act: HomeActivity) : FrameLayout(act) {
             else -> 4
         }
         val size = act.iconSize
-        grid.rowHeight = size + act.dp(34f)
+        grid.rowHeight = size + IconView.labelRowExtra(act, act.prefs.labelPx, 34f)
         for (it in items) {
             val app = act.apps.find(it.key) ?: continue
             val v = act.makeAppIcon(app, it, DragInfo.SRC_FOLDER, labels = true, onPanel = true)
@@ -520,7 +520,8 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         }
     }
 
-    private fun rowHeight() = act.iconSize + if (act.prefs.drawerLabels) act.dp(36f) else act.dp(18f)
+    private fun rowHeight() = act.iconSize +
+        if (act.prefs.drawerLabels) IconView.labelRowExtra(act, act.prefs.labelPx, 36f) else act.dp(18f)
 
     private fun bind(v: IconView, app: AppEntry, row: Boolean) {
         act.bindAppIcon(v, app, null, DragInfo.SRC_DRAWER, act.prefs.drawerLabels || row, onPanel = onPanel)
@@ -550,7 +551,8 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         when (style) {
             "pages" -> fillPages(list)
             "sections" -> fillSections(list)
-            "list" -> fillGrid(list, cols = 1, rowH = (act.iconSize * 0.78f).toInt() + act.dp(14f), row = true)
+            "list" -> fillGrid(list, cols = 1, row = true,
+                rowH = maxOf((act.iconSize * 0.78f).toInt(), IconView.labelLine(act, act.prefs.labelPx, true).toInt()) + act.dp(14f))
             else -> fillGrid(list, cols = act.prefs.drawerCols, rowH = rowHeight(), row = false)
         }
     }
