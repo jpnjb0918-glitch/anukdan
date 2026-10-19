@@ -192,7 +192,7 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         if (panel.width() <= 0f || panel.height() <= 0f) return
-        color = LauncherApp.instance.prefs.iconColor
+        color = IconColors.current()
         val cx = headCx()
         CatParts.drawHead(c, context, expr(), color, cx, panel.top, u)
         fillPaint.shader = tileShader()

@@ -49,7 +49,7 @@ class IconProvider(private val ctx: Context) {
     /** Icon colour for [app]: its own colour, else the global one (0 = 기본). */
     fun colorFor(app: AppEntry): Int {
         val p = LauncherApp.instance.prefs
-        return p.appIconColor(app.key) ?: p.iconColor
+        return p.appIconColor(app.key) ?: IconColors.current()
     }
 
     /** A hand-made 아늑단 icon in [color]. */
@@ -133,6 +133,9 @@ class IconProvider(private val ctx: Context) {
         }
         if (LauncherApp.debug) LauncherApp.dlog("icon cache: dropped $n for ${drop.size} changed package(s)")
     }
+
+    /** Hand-made icon the auto-mapping gave [pkg] ("chat", "camera", …), or null. */
+    fun autoIconFor(pkg: String): String? = autoMap[pkg]
 
     /** Package that the auto-mapping gave [icon] to, e.g. "web-browser" -> com.android.chrome. */
     fun packageForIcon(icon: String): String? = autoMap.entries.firstOrNull { it.value == icon }?.key
@@ -267,7 +270,7 @@ class IconProvider(private val ctx: Context) {
 
     fun folderIcon(color: String, contents: List<AppEntry>, size: Int): Bitmap {
         // the default (teal) folder follows the icon colour; pink / gold / navy folders keep theirs
-        val base = (if (color == "teal") catAsset("folder", LauncherApp.instance.prefs.iconColor) else asset(folderAsset(color))) ?: asset("folder")
+        val base = (if (color == "teal") catAsset("folder", IconColors.current()) else asset(folderAsset(color))) ?: asset("folder")
         val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)

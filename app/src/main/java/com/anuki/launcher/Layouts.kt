@@ -118,6 +118,8 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
     var listener: Listener? = null
     var currentPage = 0
         private set
+    /** 무한 스크롤: past the last page comes the first again (and the other way round). */
+    var wrap = false
     private val scroller = Scroller(ctx)
     private var velocity: VelocityTracker? = null
     private val cfg = ViewConfiguration.get(ctx)
@@ -214,8 +216,9 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
                 if (mode == 1) {
                     val dx = lastX - ev.x
                     lastX = ev.x
-                    val min = -width * 0.2f
-                    val max = (pageCount - 1) * width + width * 0.2f
+                    val edge = if (wrap && pageCount > 1) 0.45f else 0.2f
+                    val min = -width * edge
+                    val max = (pageCount - 1) * width + width * edge
                     val nx = (scrollX + dx).coerceIn(min, max)
                     scrollTo(nx.roundToInt(), 0)
                 }
@@ -227,10 +230,13 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
                 val vy = v?.yVelocity ?: 0f
                 if (mode == 1) {
                     val fling = cfg.scaledMinimumFlingVelocity * 4
-                    val target = when {
+                    var target = when {
                         vx > fling -> currentPage - 1
                         vx < -fling -> currentPage + 1
                         else -> ((scrollX.toFloat() / maxOf(1, width))).roundToInt()
+                    }
+                    if (wrap && pageCount > 1) {
+                        if (target >= pageCount) target = 0 else if (target < 0) target = pageCount - 1
                     }
                     snapToPage(target)
                 } else if (mode == 2) {

@@ -40,6 +40,12 @@ class Prefs(ctx: Context) {
     var dockCount by intPref("dock_count", 5)
     var dockBackground by boolPref("dock_bg", true)
     var homeLabels by boolPref("home_labels", true)
+    var lockLayout by boolPref("lock_layout", false)          // 홈 화면 배치 잠금
+    var autoAddApps by boolPref("auto_add_apps", false)       // 새로 설치한 앱을 홈 화면에 추가
+    var infiniteScroll by boolPref("infinite_scroll", false)  // 마지막 페이지 다음은 첫 페이지
+    var hideStatusBar by boolPref("hide_status_bar", false)
+    var searchContacts by boolPref("search_contacts", false)  // 앱 서랍 검색에 연락처
+    var lockHidden by boolPref("lock_hidden", false)          // 숨긴 앱은 지문·PIN 뒤에
 
     // drawer
     var drawerCols by intPref("drawer_cols", 5)

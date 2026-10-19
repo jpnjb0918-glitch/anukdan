@@ -63,6 +63,10 @@ class SettingsActivity : Activity() {
         seek("독 아이콘 수", 3, 7, prefs.dockCount, { "${it}개" }) { prefs.dockCount = it }
         switch("독 배경", null, prefs.dockBackground) { prefs.dockBackground = it }
         switch("아이콘 이름 표시", null, prefs.homeLabels) { prefs.homeLabels = it }
+        switch("홈 화면 배치 잠금", "아이콘·위젯을 옮기거나 지우거나 새로 놓지 못하게 막아요", prefs.lockLayout) { prefs.lockLayout = it }
+        switch("새 앱을 홈 화면에 추가", "새로 설치한 앱의 아이콘을 홈 화면 빈자리에 놓아요", prefs.autoAddApps) { prefs.autoAddApps = it }
+        switch("무한 스크롤", "마지막 페이지에서 넘기면 첫 페이지로 돌아가요", prefs.infiniteScroll) { prefs.infiniteScroll = it }
+        switch("상태 표시줄 숨기기", "홈 화면에서 시계·배터리 줄을 숨겨요 (위 끝에서 쓸어내리면 잠깐 보여요)", prefs.hideStatusBar) { prefs.hideStatusBar = it }
 
         section("앱 서랍")
         choice("서랍 형식", listOf(
@@ -70,6 +74,7 @@ class SettingsActivity : Activity() {
             "pages" to "가로 페이지 (좌우로 넘기기)",
             "list" to "목록 (아이콘 + 이름 한 줄씩)",
             "sections" to "가나다 묶음 (첫 글자별, 오른쪽 막대로 이동)",
+            "categories" to "종류별 묶음 (게임·소셜·음악·사진 등 자동 분류)",
         ), prefs.drawerStyle) { prefs.drawerStyle = it }
         choice("정렬", listOf("name" to "이름순", "recent" to "최근 설치순", "usage" to "많이 연 순"), prefs.drawerSort) { prefs.drawerSort = it }
         choice("서랍 배경", listOf("solid" to "테마 색", "glass" to "반투명", "wallpaper" to "배경화면 보이게"), prefs.drawerBg) { prefs.drawerBg = it }
@@ -77,7 +82,32 @@ class SettingsActivity : Activity() {
         switch("아이콘 이름 표시", "목록 형식에서는 항상 이름이 보여요", prefs.drawerLabels) { prefs.drawerLabels = it }
         note("'가나다 묶음'은 항상 이름순이에요. '많이 연 순'은 아늑이 런처에서 앱을 연 횟수로 정해져요(이번 버전부터 세기 시작해요).")
         action("탭 관리", "${prefs.tabs().size}개 · 탭마다 앱을 골라 묶어요") { Dialogs.editTabs(this) { build() } }
-        action("숨긴 앱", "${prefs.hidden.size}개 · 검색하면 숨긴 앱도 나와요") { Dialogs.hiddenApps(this) { build() } }
+        action("숨긴 앱", "${prefs.hidden.size}개 · 검색하면 숨긴 앱도 나와요" + if (prefs.lockHidden) " (지문·PIN 확인 뒤)" else "") {
+            HiddenLock.require(this) { Dialogs.hiddenApps(this) { build() } }
+        }
+        switch("숨긴 앱 잠금", "숨긴 앱 목록과 검색에 나오는 숨긴 앱을 휴대폰의 지문·얼굴·PIN으로 확인한 뒤에 보여줘요", prefs.lockHidden) { on ->
+            if (on && !HiddenLock.deviceSecure(this)) {
+                Toast.makeText(this, "먼저 휴대폰 설정에서 화면 잠금(PIN·패턴·비밀번호)을 설정해 주세요", Toast.LENGTH_LONG).show()
+                build()
+            } else if (on) {
+                HiddenLock.relock()
+                prefs.lockHidden = true
+                LauncherApp.dlog("hidden apps lock on")
+                build()
+            } else {
+                HiddenLock.require(this) { prefs.lockHidden = false; LauncherApp.dlog("hidden apps lock off"); build() }
+                build()
+            }
+        }
+        switch("연락처도 검색", "앱 서랍 검색창에서 연락처 이름도 찾아요 (처음 켤 때 연락처 읽기 권한을 물어요)", prefs.searchContacts) { on ->
+            if (on && !SearchExtras.hasPermission(this)) {
+                @Suppress("DEPRECATION") requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), REQ_CONTACTS)
+            } else {
+                prefs.searchContacts = on
+                SearchExtras.forgetContacts()
+            }
+        }
+        note("앱 서랍 검색창에 '12*3' 같은 계산식을 쓰면 답이 나오고(눌러서 복사), 맨 아래 '웹에서 검색'으로 인터넷 검색도 할 수 있어요.")
 
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
@@ -292,9 +322,22 @@ class SettingsActivity : Activity() {
         Updater.onPaused(this)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CONTACTS) {
+            val ok = grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            prefs.searchContacts = ok
+            SearchExtras.forgetContacts()
+            LauncherApp.dlog("contacts search ${if (ok) "on" else "refused"}")
+            if (!ok) Toast.makeText(this, "연락처 권한이 없어서 연락처 검색을 켜지 않았어요", Toast.LENGTH_SHORT).show()
+            build()
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == HiddenLock.REQ_CONFIRM) { HiddenLock.onResult(resultCode == RESULT_OK); return }
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
@@ -334,5 +377,6 @@ class SettingsActivity : Activity() {
         const val REQ_DEFAULT = 1
         const val REQ_BACKUP = 2
         const val REQ_RESTORE = 3
+        const val REQ_CONTACTS = 4
     }
 }

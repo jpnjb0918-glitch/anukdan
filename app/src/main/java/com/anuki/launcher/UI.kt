@@ -8,6 +8,8 @@ import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -23,6 +25,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import kotlin.math.abs
 
 fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
@@ -385,6 +388,8 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     val search = EditText(act)
     private val tabsRow = LinearLayout(act)
     private val tabsScroll = HorizontalScrollView(act)
+    /** Extra search results above the apps: calculator, contacts, hidden apps unlock, web search. */
+    private val extras = LinearLayout(act)
     private val body = FrameLayout(act)
     private val scroll = ScrollView(act)
     private val stack = LinearLayout(act)
@@ -428,6 +433,11 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         tabsRow.setPadding(act.dp(12f), 0, act.dp(12f), 0)
         tabsScroll.addView(tabsRow)
         column.addView(tabsScroll, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        extras.orientation = LinearLayout.VERTICAL
+        extras.visibility = GONE
+        column.addView(extras, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            setMargins(act.dp(12f), act.dp(4f), act.dp(12f), 0)
+        })
 
         scroll.isVerticalScrollBarEnabled = false
         scroll.clipToPadding = false
@@ -508,15 +518,17 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         val q = search.text.toString()
         val tabs = act.prefs.tabs()
         val tabKeys = if (tabIndex in 1..tabs.size) tabs[tabIndex - 1].keys else null
+        // hidden apps show up in a search, unless 숨긴 앱 잠금 is on and not unlocked yet
+        val showHidden = q.isNotBlank() && HiddenLock.isOpen()
         return act.apps.all.filter {
-            (q.isNotBlank() || it.key !in hidden) && (tabKeys == null || it.key in tabKeys) && Hangul.matches(it, q)
+            (showHidden || it.key !in hidden) && (tabKeys == null || it.key in tabKeys) && Hangul.matches(it, q)
         }
     }
 
     /** [filtered] in the chosen order; apps.all is already sorted by name (Korean collation). */
     fun ordered(): List<AppEntry> {
         val list = filtered()
-        if (act.prefs.drawerStyle == "sections") return list
+        if (act.prefs.drawerStyle == "sections" && search.text.isBlank()) return list
         return when (act.prefs.drawerSort) {
             "recent" -> list.sortedByDescending { it.installTime }
             "usage" -> list.sortedByDescending { act.prefs.launchCount(it.key) } // stable: ties stay in name order
@@ -551,7 +563,8 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         val list = ordered()
         val searching = search.text.isNotBlank()
         var style = act.prefs.drawerStyle
-        if (searching && style == "sections") style = "grid"
+        if (searching && (style == "sections" || style == "categories")) style = "grid"
+        fillExtras(if (searching) search.text.toString().trim() else "")
         val paged = style == "pages"
         scroll.visibility = if (paged) GONE else VISIBLE
         pager.visibility = if (paged) VISIBLE else GONE
@@ -561,6 +574,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         when (style) {
             "pages" -> fillPages(list)
             "sections" -> fillSections(list)
+            "categories" -> fillGroups(list.groupBy { Categories.of(it) }, Categories.ORDER, showIndex = false)
             "list" -> fillGrid(list, cols = 1, row = true,
                 rowH = maxOf((act.iconSize * 0.78f).toInt(), IconView.labelLine(act, act.prefs.labelPx, true).toInt()) + act.dp(14f))
             else -> fillGrid(list, cols = act.prefs.drawerCols, rowH = rowHeight(), row = false)
@@ -585,15 +599,18 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         grid.requestLayout()
     }
 
-    private fun fillSections(list: List<AppEntry>) {
+    private fun fillSections(list: List<AppEntry>) =
+        fillGroups(list.groupBy { Hangul.section(it.label) }, Hangul.SECTIONS, showIndex = true)
+
+    /** Grids under headings ([order] decides the order, empty groups are left out). */
+    private fun fillGroups(groups: Map<String, List<AppEntry>>, order: List<String>, showIndex: Boolean) {
         stack.removeAllViews()
         (grid.parent as? ViewGroup)?.removeView(grid)
-        stack.setPadding(act.dp(8f), act.dp(4f), act.dp(30f), act.dp(24f))
-        val groups = list.groupBy { Hangul.section(it.label) }
-        val keys = Hangul.SECTIONS.filter { it in groups }
+        stack.setPadding(act.dp(8f), act.dp(4f), act.dp(if (showIndex) 30f else 8f), act.dp(24f))
+        val keys = order.filter { it in groups } + groups.keys.filter { it !in order }
         for (k in keys) {
             val h = TextView(act).apply {
-                text = k
+                text = if (showIndex) k else "$k  ${groups.getValue(k).size}"
                 textSize = 15f
                 typeface = Fonts.regular(bold = true)
                 setTextColor(if (onPanel) Palette.TEAL else Color.WHITE)
@@ -606,7 +623,65 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             for (app in groups.getValue(k)) g.addView(newIcon(app, false))
             stack.addView(g, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
-        indexBar.keys = keys
+        if (showIndex) indexBar.keys = keys
+    }
+
+    // ---------------------------------------------------------------- extra search results
+    private fun fillExtras(q: String) {
+        extras.removeAllViews()
+        if (q.isEmpty()) { extras.visibility = GONE; return }
+        SearchExtras.calculate(q)?.let { r ->
+            extraRow("＝", "$r", "계산 결과 · 눌러서 복사", "계산: $r") {
+                val cm = act.getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("계산", r.replace(",", "")))
+                Toast.makeText(act, "$r 을(를) 복사했어요", Toast.LENGTH_SHORT).show()
+            }
+        }
+        for (c in SearchExtras.findContacts(q)) {
+            extraRow("☎", c.name, "연락처", "연락처: ${c.name}") {
+                try { act.startActivity(Intent(Intent.ACTION_VIEW, c.uri)) } catch (_: Exception) { Toast.makeText(act, "연락처를 열 수 없어요", Toast.LENGTH_SHORT).show() }
+            }
+        }
+        if (act.prefs.lockHidden && act.prefs.hidden.isNotEmpty() && !HiddenLock.isOpen()) {
+            extraRow("🔒", "숨긴 앱도 찾기", "지문·PIN 확인 후 보여요", "숨긴 앱 잠금 풀기") {
+                HiddenLock.require(act) { refresh() }
+            }
+        }
+        extraRow("🔎", "웹에서 '$q' 검색", null, "웹 검색") { webSearch(q) }
+        extras.visibility = VISIBLE
+    }
+
+    private fun extraRow(mark: String, title: String, sub: String?, desc: String, onTap: () -> Unit) {
+        val row = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(act.dp(14f), act.dp(9f), act.dp(14f), act.dp(9f))
+            background = Palette.rounded(subtleColor(), act.dp(14f).toFloat())
+            isClickable = true
+            contentDescription = desc
+            setOnClickListener { onTap() }
+        }
+        row.addView(TextView(act).apply {
+            text = mark; textSize = 18f; setTextColor(if (onPanel) Palette.TEAL else Color.WHITE)
+            minWidth = act.dp(28f); gravity = Gravity.CENTER
+        })
+        val texts = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(act.dp(10f), 0, 0, 0) }
+        texts.addView(TextView(act).apply {
+            text = title; textSize = 16f; setTextColor(textColor()); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            Fonts.apply(this, bold = true)
+        })
+        if (sub != null) texts.addView(TextView(act).apply { text = sub; textSize = 12f; setTextColor(textColor()); alpha = 0.7f; Fonts.apply(this) })
+        row.addView(texts, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        extras.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = act.dp(6f) })
+    }
+
+    private fun webSearch(q: String) {
+        val i = Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q)
+        try { act.startActivity(i) } catch (_: Exception) {
+            try {
+                act.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(q))))
+            } catch (_: Exception) { Toast.makeText(act, "검색할 앱이 없어요", Toast.LENGTH_SHORT).show() }
+        }
     }
 
     private fun fillPages(list: List<AppEntry>) {
@@ -637,6 +712,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         applyTheme()
         visibility = VISIBLE
         refresh()
+        SearchExtras.refreshContacts(act) { if (isOpen && search.text.isNotBlank()) refresh() }
         scroll.scrollTo(0, 0)
         if (pager.pageCount > 0) pager.snapTo(0, false)
         translationY = height.toFloat().takeIf { it > 0 } ?: act.resources.displayMetrics.heightPixels.toFloat()
@@ -694,3 +770,30 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
 }
 
 fun ViewGroup.MarginLayoutParams.setAll(m: Int) = setMargins(m, m, m, m)
+
+/** The 종류별 묶음 drawer: groups from the category the app declares, else from the hand-made icon it got. */
+object Categories {
+    val ORDER = listOf("게임", "소셜·메신저", "인터넷", "음악·오디오", "동영상", "사진·이미지", "뉴스·잡지", "지도·내비", "생산성", "도구", "접근성", "기타")
+
+    fun of(a: AppEntry): String = when (a.category) {
+        ApplicationInfo.CATEGORY_GAME -> "게임"
+        ApplicationInfo.CATEGORY_AUDIO -> "음악·오디오"
+        ApplicationInfo.CATEGORY_VIDEO -> "동영상"
+        ApplicationInfo.CATEGORY_IMAGE -> "사진·이미지"
+        ApplicationInfo.CATEGORY_SOCIAL -> "소셜·메신저"
+        ApplicationInfo.CATEGORY_NEWS -> "뉴스·잡지"
+        ApplicationInfo.CATEGORY_MAPS -> "지도·내비"
+        ApplicationInfo.CATEGORY_PRODUCTIVITY -> "생산성"
+        8 -> "접근성" // ApplicationInfo.CATEGORY_ACCESSIBILITY (Android 12)
+        else -> when (LauncherApp.instance.icons.autoIconFor(a.packageName)) {
+            "chat", "phone", "mail" -> "소셜·메신저"
+            "web-browser" -> "인터넷"
+            "music" -> "음악·오디오"
+            "video" -> "동영상"
+            "photos", "camera" -> "사진·이미지"
+            "calendar", "notes", "calculator", "file-manager", "cloud", "pdf" -> "생산성"
+            "settings", "clock", "store", "terminal", "key", "code-editor" -> "도구"
+            else -> "기타"
+        }
+    }
+}

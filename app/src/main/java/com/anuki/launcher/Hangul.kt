@@ -31,6 +31,14 @@ object Hangul {
         return if (u in 'A'..'Z') u.toString() else "#"
     }
 
+    /** Same matching for any name (contacts in the drawer search). */
+    fun matchesText(label: String, q: String): Boolean {
+        val query = q.trim().lowercase()
+        if (query.isEmpty()) return true
+        if (label.lowercase().contains(query)) return true
+        return isChosungQuery(query) && chosung(label).contains(query.replace(" ", ""))
+    }
+
     fun matches(app: AppEntry, q: String): Boolean {
         val query = q.trim().lowercase()
         if (query.isEmpty()) return true

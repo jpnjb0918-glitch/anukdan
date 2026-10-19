@@ -1279,6 +1279,185 @@ echo "widgets left: $LEFT" >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 
+step "다른 런처에서 가져온 기능 (배치 잠금, 새 앱 추가, 검색 계산·연락처, 종류별 서랍, 무한 스크롤, 상태 표시줄, 배경화면 색, 숨긴 앱 잠금)"
+toggle() { open_settings_row "$1" && echo "toggled $1" >> $LOG; adb shell input keyevent KEYCODE_HOME; sleep 2; }
+home_icon() { dump hi; ui shots/hi.xml find "$1"; }
+
+# 1) layout lock: the long-press menu loses 홈에서 제거, a drag doesn't move the icon
+toggle "홈 화면 배치 잠금"
+P=$(home_icon "Settings")
+echo "settings icon before=$P" >> $LOG
+if [ -n "$P" ]; then
+  adb shell input swipe $P $P 1500
+  sleep 1
+  dump lockmenu
+  shot 100-lock-menu
+  echo "locked menu: $(grep -o 'text="[^"]*"' shots/lockmenu.xml | grep -E '홈에서 제거|배치 잠금 풀기|앱 정보|아이콘 바꾸기' | tr '\n' ' ')" >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+  set -- $P
+  adb shell input draganddrop $1 $2 $1 $(( $2 - 330 )) 2500
+  sleep 2
+  echo "settings icon after drag (locked)=$(home_icon Settings)" >> $LOG
+  # unlock from the menu
+  adb shell input swipe $P $P 1500
+  sleep 1
+  dump lockmenu2
+  U=$(ui shots/lockmenu2.xml text "배치 잠금 풀기")
+  [ -n "$U" ] && adb shell input tap $U
+  sleep 1
+  adb shell input swipe $P $P 1500
+  sleep 1
+  dump lockmenu3
+  echo "menu after unlock: $(grep -o 'text="[^"]*"' shots/lockmenu3.xml | grep -E '홈에서 제거|배치 잠금 풀기' | tr '\n' ' ')" >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+fi
+
+# 2) new apps on the home screen
+toggle "새 앱을 홈 화면에 추가"
+adb uninstall com.anuki.testiconpack >/dev/null 2>&1
+sleep 2
+adb install testiconpack/build/outputs/apk/debug/testiconpack-debug.apk >/dev/null 2>&1
+sleep 5
+adb logcat -d | grep -E "auto-added" | tail -2 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+shot 101-auto-added
+echo "new app on page 1: $(home_icon '시험용 아이콘 팩')" >> $LOG
+toggle "새 앱을 홈 화면에 추가"
+
+# 3) drawer search: calculator, web search, contacts
+adb shell pm grant com.anuki.launcher android.permission.READ_CONTACTS
+adb shell content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:
+RID=$(adb shell content query --uri content://com.android.contacts/raw_contacts --projection _id | tr -d '\r' | grep -oE "_id=[0-9]+" | tail -1 | cut -d= -f2)
+adb shell content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:$RID --bind mimetype:s:vnd.android.cursor.item/name --bind data1:s:AnukiFriend
+echo "test contact raw id=$RID" >> $LOG
+toggle "연락처도 검색"
+open_drawer
+S=$(dump ds; ui shots/ds.xml classfirst android.widget.EditText)
+[ -n "$S" ] && adb shell input tap $S
+sleep 1
+adb shell "input text '12*3'"
+sleep 2
+dump calc
+shot 102-search-calc
+echo "calc row: $(grep -o 'content-desc="계산[^"]*"' shots/calc.xml)" >> $LOG
+for i in 1 2 3 4 5 6; do adb shell input keyevent KEYCODE_DEL; done
+adb shell input text "friend"
+sleep 2
+dump cont
+shot 103-search-contact
+echo "contact row: $(grep -o 'content-desc="연락처[^"]*"' shots/cont.xml) web row: $(grep -c 'content-desc="웹 검색"' shots/cont.xml)" >> $LOG
+adb logcat -d | grep -E "contacts for search|contacts search" | tail -2 >> $LOG
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+# 4) drawer by category
+set_choice "서랍 형식" "종류별 묶음 (게임·소셜·음악·사진 등 자동 분류)"
+open_drawer
+dump cat
+shot 104-drawer-categories
+echo "category groups: $(grep -o 'content-desc="구역 [^"]*"' shots/cat.xml | tr '\n' ' ')" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+set_choice "서랍 형식" "세로 격자 (위아래로 넘기기)"
+
+# 5) infinite scroll: page right past the last page lands on the first
+toggle "무한 스크롤"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb logcat -c
+for i in 1 2 3 4 5; do adb shell input swipe 900 1200 150 1200 250; sleep 1; done
+adb logcat -d | grep -E "home page ->" | tr -s ' ' | cut -d' ' -f6- | tr '\n' ' ' >> $LOG; echo >> $LOG
+toggle "무한 스크롤"
+
+# 6) status bar hidden on the home screen
+toggle "상태 표시줄 숨기기"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+shot 105-status-bar-hidden
+adb logcat -d | grep -E "status bar (hidden|shown)" | tail -1 >> $LOG
+toggle "상태 표시줄 숨기기"
+
+# 7) icon colour from the wallpaper (a colourful still wallpaper first)
+if open_wallpaper_dialog; then
+  T=$(ui shots/wpd.xml text "스티커 모음")
+  if [ -n "$T" ]; then
+    set -- $T
+    adb shell input tap $1 $(( $2 - 150 ))
+    sleep 2
+    dump wpd2
+    H=$(ui shots/wpd2.xml text "홈 화면")
+    [ -n "$H" ] && adb shell input tap $H
+    sleep 5
+  fi
+fi
+if open_settings_row "아이콘 색"; then
+  dump wcol
+  W=$(ui shots/wcol.xml anydesc "아이콘 색: 배경화면 색 따르기")
+  echo "wallpaper colour option=$W" >> $LOG
+  [ -n "$W" ] && adb shell input tap $W
+  sleep 1
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 4
+shot 106-wallpaper-colour-home
+open_drawer
+shot 107-wallpaper-colour-drawer
+adb shell input keyevent KEYCODE_HOME
+adb logcat -d | grep -E "wallpaper icon colour" | tail -2 >> $LOG
+if open_settings_row "아이콘 색"; then
+  dump wcol2
+  B=$(ui shots/wcol2.xml anydesc "아이콘 색: 기본 (청록)")
+  [ -n "$B" ] && adb shell input tap $B
+  sleep 1
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+# 8) hidden apps behind the phone's PIN
+adb shell locksettings set-pin 1234 2>&1 | tee -a $LOG
+toggle "숨긴 앱 잠금"
+open_drawer
+dump hd
+Y=$(ui shots/hd.xml find "YT Music")
+if [ -n "$Y" ]; then
+  adb shell input swipe $Y $Y 1500
+  sleep 1
+  dump hmenu
+  H=$(ui shots/hmenu.xml text "앱 서랍에서 숨기기")
+  [ -n "$H" ] && adb shell input tap $H
+  sleep 1
+fi
+S=$(dump ds2; ui shots/ds2.xml classfirst android.widget.EditText)
+[ -n "$S" ] && adb shell input tap $S
+adb shell input text "yt"
+sleep 2
+dump hs1
+shot 108-hidden-locked-search
+echo "locked search: YT Music shown=$(grep -c 'content-desc="YT Music"' shots/hs1.xml) unlock row=$(grep -c 'content-desc="숨긴 앱 잠금 풀기"' shots/hs1.xml)" >> $LOG
+R=$(ui shots/hs1.xml anydesc "숨긴 앱 잠금 풀기")
+if [ -n "$R" ]; then
+  adb shell input tap $R
+  sleep 3
+  shot 109-hidden-pin-prompt
+  adb shell input text 1234
+  adb shell input keyevent KEYCODE_ENTER
+  sleep 3
+  dump hs2
+  shot 110-hidden-unlocked-search
+  echo "after PIN: YT Music shown=$(grep -c 'content-desc="YT Music"' shots/hs2.xml)" >> $LOG
+fi
+adb logcat -d | grep -E "hidden apps (unlocked|unlock failed|lock)" | tail -3 >> $LOG
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_HOME
+adb shell locksettings clear --old 1234 2>&1 | tee -a $LOG
+sleep 2
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

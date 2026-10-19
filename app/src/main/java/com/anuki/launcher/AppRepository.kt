@@ -21,6 +21,9 @@ class AppEntry(val info: LauncherActivityInfo, val label: String, val serial: Lo
     val chosung: String = Hangul.chosung(label)
     val isSystem: Boolean = (info.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
     val isGame: Boolean = info.applicationInfo.category == ApplicationInfo.CATEGORY_GAME
+    /** The app's own category (ApplicationInfo.CATEGORY_*), -1 when it doesn't say; used by the 종류별 drawer. */
+    val category: Int = if (isGame || (info.applicationInfo.flags and ApplicationInfo.FLAG_IS_GAME) != 0) ApplicationInfo.CATEGORY_GAME
+        else info.applicationInfo.category
     val installTime: Long = try { info.firstInstallTime } catch (_: Exception) { 0L }
 
     companion object {
@@ -45,6 +48,9 @@ class AppRepository(private val ctx: Context) {
     /** Packages uninstalled since the home screen last looked; their icons get removed from the layout. */
     val removedPackages = HashSet<String>()
 
+    /** Packages newly installed since the home screen last looked (for 새 앱을 홈 화면에 추가). */
+    val addedPackages = HashSet<String>()
+
     /** Packages changed since the last reload: only their icons are drawn again. */
     private val changed = HashSet<String>()
     private val reloadLater = Runnable { reload() }
@@ -60,7 +66,9 @@ class AppRepository(private val ctx: Context) {
         override fun onPackageRemoved(packageName: String?, user: UserHandle?) {
             if (packageName != null) { removedPackages += packageName; changedSoon(listOf(packageName)) }
         }
-        override fun onPackageAdded(packageName: String?, user: UserHandle?) { packageName?.let { changedSoon(listOf(it)) } }
+        override fun onPackageAdded(packageName: String?, user: UserHandle?) {
+            packageName?.let { if (user == null || user == android.os.Process.myUserHandle()) addedPackages += it; changedSoon(listOf(it)) }
+        }
         override fun onPackageChanged(packageName: String?, user: UserHandle?) { packageName?.let { changedSoon(listOf(it)) } }
         override fun onPackagesAvailable(packageNames: Array<out String>?, user: UserHandle?, replacing: Boolean) {
             changedSoon(packageNames?.toList() ?: emptyList())

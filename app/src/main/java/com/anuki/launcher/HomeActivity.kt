@@ -94,10 +94,25 @@ class HomeActivity : Activity(), PagedView.Listener {
         }
         // these are protected broadcasts only the system can send
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(dateReceiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(dateReceiver, f)
+        if (Build.VERSION.SDK_INT >= 27) {
+            try { android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener(wallpaperColors, android.os.Handler(mainLooper)) } catch (_: Exception) { }
+        }
+    }
+
+    /** 아이콘 색 "배경화면 색 따르기": a new wallpaper recolours the icons. */
+    private val wallpaperColors = android.app.WallpaperManager.OnColorsChangedListener { _, which ->
+        if ((which and android.app.WallpaperManager.FLAG_SYSTEM) == 0) return@OnColorsChangedListener
+        if (prefs.iconColor != IconColors.WALLPAPER) { IconColors.onWallpaperChanged(); return@OnColorsChangedListener }
+        IconColors.onWallpaperChanged()
+        icons.invalidate()
+        if (apps.loaded) bindAll()
     }
 
     override fun onDestroy() {
         movingBg.release()
+        if (Build.VERSION.SDK_INT >= 27) {
+            try { android.app.WallpaperManager.getInstance(this).removeOnColorsChangedListener(wallpaperColors) } catch (_: Exception) { }
+        }
         try { unregisterReceiver(dateReceiver) } catch (_: Exception) { }
         apps.removeListener(appsListener)
         Badges.listeners -= badgeListener
@@ -111,6 +126,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onStop() {
         super.onStop()
+        HiddenLock.relock()
         try { widgetHost.stopListening() } catch (_: Exception) { }
     }
 
@@ -121,8 +137,29 @@ class HomeActivity : Activity(), PagedView.Listener {
         movingBg.onHomeVisible(false)
     }
 
+    /** 상태 표시줄 숨기기: hidden on the home screen; a swipe from the top edge shows it for a moment. */
+    private var statusHidden: Boolean? = null
+
+    private fun applyStatusBar() {
+        val hide = prefs.hideStatusBar
+        if (statusHidden != hide) { statusHidden = hide; LauncherApp.dlog("status bar ${if (hide) "hidden" else "shown"}") }
+        if (Build.VERSION.SDK_INT >= 30) {
+            val c = window.insetsController ?: return
+            if (hide) {
+                c.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                c.hide(android.view.WindowInsets.Type.statusBars())
+            } else c.show(android.view.WindowInsets.Type.statusBars())
+        } else {
+            @Suppress("DEPRECATION")
+            val f = window.decorView.systemUiVisibility
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (hide) f or View.SYSTEM_UI_FLAG_FULLSCREEN else f and View.SYSTEM_UI_FLAG_FULLSCREEN.inv()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        applyStatusBar()
         movingBg.apply(MovingWallpaper.launcherValue(this))
         movingBg.onHomeVisible(true)
         Updater.onResumed(this)
@@ -221,9 +258,30 @@ class HomeActivity : Activity(), PagedView.Listener {
             if (moved) model.save()
         }
         if (!prefs.firstRunDone && model.items.isEmpty()) askDefaultHomeOnce()
+        addNewApps()
         bindAll()
         // the drawer's icons next, after the ones on screen
         icons.preload(apps.all, iconSize)
+    }
+
+    /** 새 앱을 홈 화면에 추가: newly installed apps get an icon on the first free spot (from the first page). */
+    private fun addNewApps() {
+        if (apps.addedPackages.isEmpty()) return
+        val added = HashSet(apps.addedPackages)
+        apps.addedPackages.clear()
+        if (!prefs.autoAddApps || !prefs.firstRunDone) return
+        var n = 0
+        for (pkg in added) {
+            for (a in apps.all.filter { it.packageName == pkg && it.serial == apps.mainSerial() }) {
+                if (a.packageName == packageName) continue
+                if (model.items.any { it.type == HomeItem.TYPE_APP && it.key == a.key }) continue
+                val s = model.findSpotAnywhere(prefs.homeCols, prefs.homeRows, 1, 1, 0)
+                model.items += HomeItem(model.newId(), HomeItem.TYPE_APP, HomeItem.DESKTOP, s[0], s[1], s[2], key = a.key, title = a.label)
+                n++
+                LauncherApp.dlog("auto-added ${a.key} at page ${s[0]} (${s[1]},${s[2]})")
+            }
+        }
+        if (n > 0) model.save()
     }
 
     private fun populateDefaults() {
@@ -271,6 +329,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         model.normalize(prefs.homeCols, prefs.homeRows, prefs.dockCount)
 
         val cur = workspace.currentPage
+        workspace.wrap = prefs.infiniteScroll
         workspace.removeAllViews()
         for (i in 0 until model.pageCount) workspace.addView(newPage(i))
 
@@ -592,19 +651,24 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     // ------------------------------------------------------------ PagedView.Listener
 
-    override fun onPageChanged(page: Int) { indicator.current = page }
+    override fun onPageChanged(page: Int) {
+        indicator.current = page
+        if (LauncherApp.debug) LauncherApp.dlog("home page -> $page of ${workspace.pageCount}")
+    }
     override fun onSwipeUp() = runAction(prefs.gestureUp, prefs.gestureUpApp)
     override fun onSwipeDown() = runAction(prefs.gestureDown, prefs.gestureDownApp)
     override fun onDoubleTap() = runAction(prefs.gestureDouble, prefs.gestureDoubleApp)
 
     override fun onEmptyLongPress(rawX: Float, rawY: Float) {
         val entries = ArrayList<MenuEntry>()
-        entries += MenuEntry("위젯 추가") { pickWidget() }
+        val locked = prefs.lockLayout
+        if (!locked) entries += MenuEntry("위젯 추가") { pickWidget() }
         entries += MenuEntry("배경화면") { Dialogs.wallpaper(this) }
         val cur = workspace.currentPage
-        if (model.pageCount > 1 && model.items.none { it.container == HomeItem.DESKTOP && it.screen == cur }) {
+        if (!locked && model.pageCount > 1 && model.items.none { it.container == HomeItem.DESKTOP && it.screen == cur }) {
             entries += MenuEntry("이 페이지 삭제") { model.deletePage(cur); model.save(); bindAll() }
         }
+        if (locked) entries += MenuEntry("배치 잠금 풀기") { prefs.lockLayout = false; toast("홈 화면 배치 잠금을 풀었어요") }
         entries += MenuEntry("런처 설정") { startActivity(Intent(this, SettingsActivity::class.java)) }
         dragLayer.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         showPopupAt(Rect(rawX.toInt(), rawY.toInt(), rawX.toInt(), rawY.toInt()), entries)
@@ -615,9 +679,21 @@ class HomeActivity : Activity(), PagedView.Listener {
     private fun onItemLongPress(view: View, item: HomeItem?, app: AppEntry?, source: Int, rawX: Float, rawY: Float) {
         if (drag.isActive) return
         val entryApp = app ?: item?.takeIf { it.type == HomeItem.TYPE_APP }?.let { apps.find(it.key) }
-        drag.startPending(DragInfo(source, item, entryApp, view), rawX, rawY)
-        showPopup(view, menuFor(item, entryApp, source))
+        // 홈 화면 배치 잠금: the menu still opens, but nothing can be dragged, added, moved or removed
+        if (!prefs.lockLayout) drag.startPending(DragInfo(source, item, entryApp, view), rawX, rawY)
+        var entries = menuFor(item, entryApp, source)
+        if (prefs.lockLayout) entries = lockedMenu(entries)
+        showPopup(view, entries)
     }
+
+    /** Menu entries that change the layout, hidden while it is locked. */
+    private val layoutEntries = setOf("홈에서 제거", "위젯 삭제", "크기 조절", "폴더 삭제", "홈 화면에 추가")
+
+    private fun lockedMenu(entries: List<MenuEntry>): List<MenuEntry> =
+        entries.filter { it.label !in layoutEntries } + MenuEntry("배치 잠금 풀기") {
+            prefs.lockLayout = false
+            toast("홈 화면 배치 잠금을 풀었어요")
+        }
 
     private fun menuFor(item: HomeItem?, app: AppEntry?, source: Int): List<MenuEntry> {
         val list = ArrayList<MenuEntry>()
@@ -852,6 +928,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             REQ_BIND_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) configureOrPlace(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
             REQ_PICK_PHOTO -> if (resultCode == RESULT_OK) data?.data?.let { onPhotoPicked(it) }
+            HiddenLock.REQ_CONFIRM -> HiddenLock.onResult(resultCode == RESULT_OK)
             MovingWallpaper.REQ_PICK -> if (resultCode == RESULT_OK) data?.data?.let { MovingWallpaper.onPicked(this, it) }
             REQ_CONFIG_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) placeWidget(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }

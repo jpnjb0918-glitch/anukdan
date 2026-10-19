@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.WallpaperManager
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -401,6 +402,8 @@ object Dialogs {
         val options = ArrayList<Pair<Int?, String>>()
         if (allowFollow) options += (null to "전체 색 따르기")
         options += IconColors.PRESETS.map { (c, n) -> (c as Int?) to n }
+        // the whole set can follow the wallpaper (not one app on its own)
+        if (!allowFollow && Build.VERSION.SDK_INT >= 27) options += (IconColors.WALLPAPER as Int?) to "배경화면 색 따르기"
         val grid = GridView(a).apply {
             numColumns = 4
             verticalSpacing = a.dp(12f)
@@ -415,7 +418,7 @@ object Dialogs {
                 val (c, name) = options[position]
                 val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
                 val iv = ImageView(a)
-                val shown = c ?: LauncherApp.instance.prefs.iconColor
+                val shown = IconColors.resolve(c ?: LauncherApp.instance.prefs.iconColor)
                 iv.setImageBitmap(icons.catAsset("folder", shown))
                 if (c == current) iv.background = Palette.rounded(0x332E9497, a.dp(12f).toFloat(), a.dp(2f), Palette.TEAL)
                 col.addView(iv, LinearLayout.LayoutParams(a.dp(52f), a.dp(52f)))
@@ -429,7 +432,9 @@ object Dialogs {
             onPick(options[position].first)
         }
         dialog = AlertDialog.Builder(a).setTitle(title).setView(grid)
-            .setNeutralButton("직접 고르기") { _, _ -> customColor(a, title, current?.takeIf { it != 0 } ?: 0xFF4BD5D6.toInt(), sampleApp, onPick) }
+            .setNeutralButton("직접 고르기") { _, _ ->
+                customColor(a, title, current?.let { IconColors.resolve(it) }?.takeIf { it != 0 } ?: 0xFF4BD5D6.toInt(), sampleApp, onPick)
+            }
             .setNegativeButton("취소", null).show()
     }
 
