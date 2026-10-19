@@ -77,7 +77,7 @@ jobs:
           # what changed since the previous (non-test) release: first line of each commit; the app shows this list
           PREV=$(gh api "repos/${{ github.repository }}/releases?per_page=30" --jq '[.[] | select(.prerelease|not)][0].tag_name' 2>/dev/null || true)
           if [ -n "$PREV" ] && git rev-parse -q --verify "refs/tags/$PREV" >/dev/null; then
-            CHANGES=$(git log --no-merges --pretty=format:'- %s' "$PREV"..HEAD | head -20)
+            CHANGES=$(git log --no-merges --pretty=format:'- %s' "$PREV"..HEAD | { grep -v '^- 검사' || true; } | head -20)
           else
             CHANGES=$(git log -1 --pretty=format:'- %s')
           fi

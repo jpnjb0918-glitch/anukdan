@@ -663,10 +663,17 @@ open_drawer
 shot 40-drawer-pages
 dump dpages
 echo "pages, first page: $(drawer_labels shots/dpages.xml 40)" >> $LOG
-adb shell input swipe 900 1300 150 1300 200
+adb shell input swipe 900 1300 150 1300 300
 sleep 2
-shot 41-drawer-pages-2
 dump dpages2
+# a slow emulator sometimes drops the swipe: try once more, slower
+if [ "$(drawer_labels shots/dpages2.xml 3)" = "$(drawer_labels shots/dpages.xml 3)" ]; then
+  echo "page swipe did not move, trying again" >> $LOG
+  adb shell input swipe 950 1100 100 1100 500
+  sleep 2
+  dump dpages2
+fi
+shot 41-drawer-pages-2
 echo "pages, second page: $(drawer_labels shots/dpages2.xml 40)" >> $LOG
 adb logcat -d | grep "drawer pages:" | tail -2 >> $LOG
 adb shell input keyevent KEYCODE_HOME
@@ -958,15 +965,22 @@ if open_wallpaper_dialog; then
   adb shell input keyevent KEYCODE_HOME
   sleep 3
   shot 56-live-home
-  # lock screen: screen off and on again
+  echo "wallpaper states:" >> $LOG
+  adb shell dumpsys wallpaper | grep -iE "wallpaper state|mWallpaperComponent" | head -8 >> $LOG
+  # lock screen: the test emulator has the lock screen turned off, so turn the plain swipe lock screen on first
+  adb shell locksettings set-disabled false 2>&1 | tee -a $LOG
   adb shell input keyevent KEYCODE_SLEEP
   sleep 2
   adb shell input keyevent KEYCODE_WAKEUP
   sleep 3
   shot 57-lock-a
+  dump lock
+  echo "lock screen showing: $(adb shell dumpsys window | grep -iE 'mDreamingLockscreen|isKeyguardShowing|KeyguardShowing|mShowingLockscreen' | head -3 | tr -s ' ' | tr '\n' ' ')" >> $LOG
+  grep -o 'resource-id="com.android.systemui:id/[^"]*"' shots/lock.xml | sort -u | head -8 | tr '\n' ' ' >> $LOG; echo >> $LOG
   sleep 1
   shot 57-lock-b
   adb shell wm dismiss-keyguard
+  adb shell locksettings set-disabled true 2>&1 | tee -a $LOG
   adb shell input swipe 540 1900 540 600 200
   sleep 2
   adb shell input keyevent KEYCODE_HOME

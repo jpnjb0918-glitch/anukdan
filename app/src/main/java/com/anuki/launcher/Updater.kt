@@ -83,7 +83,7 @@ object Updater {
         val o = JSONObject(get("$REPO/compare/$fromTag...$toTag"))
         val commits = o.getJSONArray("commits")
         (0 until commits.length()).map { commits.getJSONObject(it).getJSONObject("commit").optString("message").lineSequence().first().trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("Merge ") }
+            .filter { it.isNotEmpty() && !it.startsWith("Merge ") && !it.startsWith("검사") }
             .reversed()
     } catch (e: Exception) {
         LauncherApp.dlog("update compare failed: $e")
