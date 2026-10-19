@@ -629,6 +629,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         if (pager.pageCount > 0) pager.snapTo(0, false)
         translationY = height.toFloat().takeIf { it > 0 } ?: act.resources.displayMetrics.heightPixels.toFloat()
         animate().translationY(0f).setDuration(220).withEndAction {
+            if (isOpen) act.setHomeContentVisible(false)
             if (focusSearch) {
                 search.requestFocus()
                 act.getSystemService(InputMethodManager::class.java).showSoftInput(search, 0)
@@ -640,6 +641,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         if (!isOpen) return
         act.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
         search.clearFocus()
+        act.setHomeContentVisible(true)
         val end = Runnable {
             visibility = GONE
             translationY = 0f
@@ -657,6 +659,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
                 val atTop = pager.visibility == VISIBLE || scroll.scrollY == 0
                 if (!dragging && atTop && dy > slop * 2 && dy > abs(ev.rawX - downX) * 1.5f) {
                     dragging = true
+                    act.setHomeContentVisible(true) // the home screen shows as the drawer is pulled down
                     return true
                 }
             }
@@ -671,7 +674,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
                 if (translationY > height * 0.22f) close(true)
-                else animate().translationY(0f).setDuration(150).start()
+                else animate().translationY(0f).setDuration(150).withEndAction { act.setHomeContentVisible(false) }.start()
             }
         }
         return true

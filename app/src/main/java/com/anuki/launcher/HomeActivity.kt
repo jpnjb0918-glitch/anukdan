@@ -432,6 +432,12 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     fun closeDrawer(animate: Boolean) = drawer.close(animate)
 
+    /** The drawer hides the home pages and dock while it is open, so a see-through drawer shows only the wallpaper. */
+    fun setHomeContentVisible(visible: Boolean) {
+        column.animate().cancel()
+        column.animate().alpha(if (visible) 1f else 0f).setDuration(if (visible) 120L else 150L).start()
+    }
+
     private fun openFolder(item: HomeItem) {
         closePopup()
         folderView.open(item)

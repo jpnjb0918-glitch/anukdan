@@ -60,6 +60,14 @@ elif mode == 'classfirst':
         if n.get('class') == sys.argv[3]:
             print(*center(n))
             break
+elif mode == 'below':
+    # first node of class argv[3] whose top edge is below y=argv[4]: prints left top right bottom
+    for n in ET.parse(path).iter('node'):
+        if n.get('class') == sys.argv[3]:
+            x1, y1, x2, y2 = map(int, re.findall(r'\d+', n.get('bounds')))
+            if y1 > int(sys.argv[4]):
+                print(x1, y1, x2, y2)
+                break
 elif mode == 'count':
     # number of nodes of a class, e.g. icon cells in a grid
     print(sum(1 for n in ET.parse(path).iter('node') if n.get('class') == sys.argv[3]))

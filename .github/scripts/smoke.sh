@@ -634,7 +634,30 @@ set_choice() {
 open_drawer() { adb shell input swipe 540 1500 540 400 200; sleep 3; }
 drawer_labels() { ui "$1" list | awk '$NF > 300 && $NF < 2250' | head -${2:-8} | awk '{$NF=""; $(NF-1)=""; print}' | tr '\n' ',' ; }
 
+# set the drawer's 열 수 slider: $1 = fraction along the bar (0 = 3 columns, 0.5 = 5 columns)
+set_drawer_cols() {
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  scroll_top
+  local T=$(find_scroll "열 수")
+  echo "열 수 row=$T" >> $LOG
+  [ -z "$T" ] && return 1
+  set -- "$1" $T
+  local B=$(ui shots/fs.xml below android.widget.SeekBar "$3")
+  echo "slider=$B" >> $LOG
+  [ -z "$B" ] && return 1
+  set -- "$1" $B
+  local x=$(python3 -c "print(int($2 + 30 + ($4 - $2 - 60) * $1))")
+  adb shell input tap $x $(( ($3 + $5) / 2 ))
+  sleep 1
+  dump colsdone
+  grep -o 'text="[0-9]칸"' shots/colsdone.xml | tr '\n' ' ' >> $LOG; echo >> $LOG
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+}
+
 set_choice "서랍 형식" "가로 페이지 (좌우로 넘기기)"
+set_drawer_cols 0
 open_drawer
 shot 40-drawer-pages
 dump dpages
@@ -647,6 +670,7 @@ echo "pages, second page: $(drawer_labels shots/dpages2.xml 40)" >> $LOG
 adb logcat -d | grep "drawer pages:" | tail -2 >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2
+set_drawer_cols 0.5
 
 set_choice "서랍 형식" "목록 (아이콘 + 이름 한 줄씩)"
 open_drawer
