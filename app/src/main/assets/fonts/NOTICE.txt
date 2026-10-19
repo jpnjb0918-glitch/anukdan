@@ -1,0 +1,14 @@
+아늑이 런처에 들어 있는 글꼴
+
+모두 SIL Open Font License 1.1(OFL) 무료 글꼴이에요. 글꼴마다 라이선스 전문이 OFL-*.txt 파일로 함께 들어 있어요.
+출처: Google Fonts 저장소 (https://github.com/google/fonts, ofl 폴더)
+
+· 주아 (Jua) — Woowahan Brothers — jua.ttf
+· 개구 (Gaegu) — JIKJI SOFT — gaegu.ttf
+· 감자꽃 (Gamja Flower) — YoonDesign Inc — gamjaflower.ttf
+· 하이멜로디 (Hi Melody) — YoonDesign Inc — himelody.ttf
+· 고운돋움 (Gowun Dodum) — Yanghee Ryu — gowundodum.ttf
+· 나눔손글씨 펜 (Nanum Pen Script) — Sandoll Communication / NHN — nanumpen.ttf
+
+바꾼 점: 주아·개구·감자꽃·하이멜로디·고운돋움은 앱 크기를 줄이려고 자주 쓰는 한글 2,350자와 영문·숫자·기호만 남기고 힌팅을 뺀 줄임본이에요(tools/fonts/subset.py). 줄임본에 없는 글자는 휴대폰 기본 글꼴로 보여요.
+나눔손글씨 펜은 예약 글꼴 이름(Reserved Font Name)이 있어서 바꾸지 않은 원본을 그대로 넣었어요.

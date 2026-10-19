@@ -78,7 +78,14 @@ class IconView(ctx: Context) : View(ctx) {
         return super.onTouchEvent(event)
     }
 
+    /** The launcher font (설정 → 글꼴), picked up whenever the view is measured or drawn. */
+    private fun applyFont() {
+        val tf = Fonts.current()
+        if (textPaint.typeface !== tf) { textPaint.typeface = tf; rowText.typeface = tf }
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        applyFont()
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val wantH = if (row) iconSize + dp(14f).toInt()
         else (iconSize + if (showLabel) labelHeight() + dp(4f) else 0f).toInt() + dp(8f).toInt()
@@ -93,6 +100,7 @@ class IconView(ctx: Context) : View(ctx) {
     private fun labelHeight() = textPaint.fontSpacing
 
     override fun onDraw(canvas: Canvas) {
+        applyFont()
         if (row) {
             val top = (height - iconSize) / 2f
             val left = dp(18f)
@@ -163,7 +171,7 @@ class IconView(ctx: Context) : View(ctx) {
 
         /** Height of one line of app name at [px] (0 = 기본). */
         fun labelLine(ctx: Context, px: Int, row: Boolean = false): Float =
-            TextPaint().apply { textSize = labelSize(ctx, px, row) }.fontSpacing
+            TextPaint().apply { typeface = Fonts.current(); textSize = labelSize(ctx, px, row) }.fontSpacing
 
         /**
          * Extra row height under the icon for the label, in pixels: [baseDp] at the 기본 size,

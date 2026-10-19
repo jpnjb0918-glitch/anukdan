@@ -1058,6 +1058,173 @@ fi
 adb logcat -d | grep -E "moving bg" | tail -20 >> $LOG
 adb shell run-as com.anuki.launcher ls -la files/moving >> $LOG 2>&1
 
+step "아늑단 widgets (홈 길게 누르기 → 위젯 추가 → 아늑단 위젯)"
+# long-press an empty spot of the current page and pick "위젯 추가" (tries a few spots; widgets may cover some)
+open_widget_list() {
+  for P in "540 700" "540 1500" "200 1500" "880 1500" "540 400" "200 400" "880 400" "540 1100"; do
+    adb shell input swipe $P $P 1500
+    sleep 1
+    dump wmenu
+    local W=$(ui shots/wmenu.xml text "위젯 추가")
+    if [ -n "$W" ]; then adb shell input tap $W; sleep 3; return 0; fi
+    adb shell input keyevent KEYCODE_BACK
+    sleep 1
+  done
+  return 1
+}
+# scroll a list until a node whose content-desc is $1 shows up; prints its centre
+find_desc() {
+  for i in 1 2 3 4 5 6; do
+    dump fd
+    local P=$(ui shots/fd.xml anydesc "$1")
+    if [ -n "$P" ]; then echo "$P"; return 0; fi
+    adb shell input swipe 540 1800 540 1000 300
+    sleep 1
+  done
+  return 1
+}
+add_cat_widget() {
+  open_widget_list || { echo "no widget list for $1" >> $LOG; return 1; }
+  [ "$1" = "아늑단 시계" ] && shot 80-widget-list
+  local R=$(find_desc "위젯: $1")
+  echo "widget row $1=$R" >> $LOG
+  [ -z "$R" ] && { adb shell input keyevent KEYCODE_BACK; return 1; }
+  adb shell input tap $R
+  sleep 3
+  return 0
+}
+widget_at() { dump wh; ui shots/wh.xml descprefix "$1"; }
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do add_cat_widget "$W"; done
+adb shell input keyevent KEYCODE_HOME
+sleep 1
+adb logcat -d | grep -E "cat widget" | tail -4 >> $LOG
+# the page with the widgets (the last one added is in view)
+shot 81-widgets-home
+dump wh
+grep -o 'content-desc="아늑단 [^"]*"' shots/wh.xml | tr '\n' ' ' >> $LOG; echo >> $LOG
+
+# memo: tap, type, save
+M=$(widget_at "아늑단 메모")
+echo "memo widget=$M" >> $LOG
+if [ -n "$M" ]; then
+  adb shell input tap $M
+  sleep 2
+  dump memo
+  F=$(ui shots/memo.xml anydesc "메모 내용")
+  [ -n "$F" ] && adb shell input tap $F
+  adb shell input text "Buy%smilk"
+  adb shell input keyevent KEYCODE_ENTER
+  adb shell input text "Yoga%sat%s6"
+  sleep 1
+  dump memo2
+  S=$(ui shots/memo2.xml text "저장")
+  [ -n "$S" ] && adb shell input tap $S
+  sleep 2
+  echo "memo after save: $(widget_at '아늑단 메모'; grep -o 'content-desc="아늑단 메모[^"]*"' shots/wh.xml)" >> $LOG
+fi
+# battery: low, then charging
+adb shell dumpsys battery unplug
+adb shell dumpsys battery set level 12
+sleep 2
+shot 82-widget-battery-low
+dump wh; echo "battery low: $(grep -o 'content-desc="아늑단 배터리[^"]*"' shots/wh.xml)" >> $LOG
+adb shell dumpsys battery set ac 1
+adb shell dumpsys battery set status 2
+adb shell dumpsys battery set level 64
+sleep 2
+shot 83-widget-battery-charging
+dump wh; echo "battery charging: $(grep -o 'content-desc="아늑단 배터리[^"]*"' shots/wh.xml)" >> $LOG
+adb shell dumpsys battery reset
+
+# the clock: analog face from the long-press menu, on the clock's page
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+for i in 1 2 3; do C=$(widget_at "아늑단 시계"); [ -n "$C" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
+echo "clock widget=$C" >> $LOG
+if [ -n "$C" ]; then
+  shot 84-widget-clock-digital
+  adb shell input swipe $C $C 1500
+  sleep 1
+  dump cmenu
+  A=$(ui shots/cmenu.xml text "아날로그 시계로 바꾸기")
+  echo "analog menu=$A" >> $LOG
+  [ -n "$A" ] && adb shell input tap $A
+  sleep 2
+  shot 85-widget-clock-analog
+  dump wh; echo "clock: $(grep -o 'content-desc="아늑단 시계[^"]*"' shots/wh.xml)" >> $LOG
+fi
+
+# search: opens the drawer with the search box
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+for i in 1 2 3; do Q=$(widget_at "아늑단 검색창"); [ -n "$Q" ] && break; adb shell input swipe 150 1200 900 1200 300; sleep 2; done
+echo "search widget=$Q" >> $LOG
+if [ -n "$Q" ]; then
+  adb shell input tap $Q
+  sleep 2
+  shot 86-widget-search-tapped
+  echo "ime shown: $(adb shell dumpsys input_method | grep -c 'mInputShown=true')" >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+fi
+
+step "글꼴 (설정 → 글꼴)"
+for FONT in "주아" "나눔손글씨 펜"; do
+  if open_settings_row "글꼴"; then
+    [ "$FONT" = "주아" ] && shot 87-font-picker
+    dump fontp
+    P=$(ui shots/fontp.xml anydesc "글꼴: $FONT")
+    echo "font row $FONT=$P" >> $LOG
+    [ -n "$P" ] && adb shell input tap $P
+    sleep 1
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  for i in 1 2 3; do C=$(widget_at "아늑단 시계"); [ -n "$C" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
+  if [ "$FONT" = "주아" ]; then shot 88-font-jua-widgets; else shot 89-font-nanumpen-widgets; fi
+  open_drawer
+  if [ "$FONT" = "주아" ]; then shot 90-font-jua-drawer; fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+done
+adb logcat -d | grep -E "font ->|font .* failed" | tail -4 >> $LOG
+if open_settings_row "글꼴"; then
+  dump fontp
+  P=$(ui shots/fontp.xml anydesc "글꼴: 기본 (휴대폰 글꼴)")
+  [ -n "$P" ] && adb shell input tap $P
+  sleep 1
+fi
+if open_settings_row "글꼴 라이선스"; then
+  shot 91-font-license
+  dump flic
+  grep -o 'text="[^"]*Open Font[^"]*"' shots/flic.xml | head -1 | cut -c1-120 >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+# remove the widgets again (long-press → 위젯 삭제)
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do
+  for i in 1 2 3; do X=$(widget_at "$W"); [ -n "$X" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
+  [ -z "$X" ] && for i in 1 2 3; do X=$(widget_at "$W"); [ -n "$X" ] && break; adb shell input swipe 150 1200 900 1200 300; sleep 2; done
+  if [ -n "$X" ]; then
+    adb shell input swipe $X $X 1500
+    sleep 1
+    dump dmenu
+    D=$(ui shots/dmenu.xml text "위젯 삭제")
+    [ -n "$D" ] && adb shell input tap $D
+    sleep 2
+  fi
+done
+dump wh
+echo "widgets left: $(grep -c 'content-desc="아늑단 ' shots/wh.xml)" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

@@ -115,6 +115,85 @@ object Dialogs {
             .setNegativeButton("취소", null).show()
     }
 
+    /** The 아늑단 메모 widget's text: several lines, empty is allowed (shows the hint again). */
+    fun memo(a: Activity, initial: String, onSave: (String) -> Unit) {
+        val et = EditText(a).apply {
+            setText(initial)
+            setSelection(initial.length)
+            minLines = 4
+            maxLines = 10
+            gravity = Gravity.TOP or Gravity.START
+            hint = "메모를 써요"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            contentDescription = "메모 내용"
+            Fonts.apply(this)
+        }
+        val wrap = LinearLayout(a).apply {
+            setPadding(a.dp(22f), a.dp(8f), a.dp(22f), 0)
+            addView(et, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        AlertDialog.Builder(a).setTitle("아늑단 메모").setView(wrap)
+            .setPositiveButton("저장") { _, _ -> onSave(et.text.toString().trimEnd()) }
+            .setNeutralButton("모두 지우기") { _, _ -> onSave("") }
+            .setNegativeButton("취소", null).show()
+    }
+
+    // ------------------------------------------------------------ launcher font
+    /** Each font shown in itself; picks the key ("" = the phone's font). */
+    fun fontPicker(a: Activity, current: String, onPick: (String) -> Unit) {
+        val list = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(6f), 0, a.dp(6f)) }
+        var dialog: AlertDialog? = null
+        for (f in Fonts.ALL) {
+            val tf = Fonts.typeface(a, f.key)
+            val row = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(a.dp(22f), a.dp(10f), a.dp(22f), a.dp(10f))
+                isClickable = true
+                background = a.getDrawable(android.R.drawable.list_selector_background)
+                contentDescription = "글꼴: ${f.label}"
+                setOnClickListener { dialog?.dismiss(); onPick(f.key) }
+            }
+            row.addView(TextView(a).apply {
+                text = (if (f.key == current) "✓ " else "") + f.label
+                textSize = 20f
+                typeface = tf ?: android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(if (f.key == current) Palette.TEAL else 0xFF1A2B2C.toInt())
+            })
+            row.addView(TextView(a).apply {
+                text = "아늑단 고양이 런처 · 가나다 ABC 123"
+                textSize = 16f
+                typeface = tf ?: android.graphics.Typeface.DEFAULT
+                setTextColor(0xFF1A2B2C.toInt())
+            })
+            row.addView(TextView(a).apply { text = f.note; textSize = 12f; alpha = 0.6f })
+            list.addView(row)
+        }
+        list.addView(TextView(a).apply {
+            text = "앱 이름, 폴더, 앱 서랍, 메뉴, 아늑단 위젯의 글자가 바뀌어요. 글꼴은 모두 무료 글꼴(SIL Open Font License)이에요."
+            textSize = 12.5f; alpha = 0.7f
+            setPadding(a.dp(22f), a.dp(8f), a.dp(22f), a.dp(4f))
+        })
+        dialog = AlertDialog.Builder(a).setTitle("글꼴")
+            .setView(android.widget.ScrollView(a).apply { addView(list) })
+            .setNegativeButton("취소", null).show()
+    }
+
+    fun fontLicense(a: Activity) {
+        val notice = try { a.assets.open("fonts/NOTICE.txt").bufferedReader().readText() } catch (_: Exception) { "" }
+        val ofl = try { a.assets.open("fonts/OFL-jua.txt").bufferedReader().readText() } catch (_: Exception) { "" }
+        val text = notice +
+            "\n\n— SIL Open Font License 1.1 (주아의 예, 글꼴마다 저작권 줄만 달라요) —\n\n" + ofl
+        val tv = TextView(a).apply {
+            this.text = text; textSize = 12.5f
+            setPadding(a.dp(22f), a.dp(8f), a.dp(22f), a.dp(8f))
+            setTextIsSelectable(true)
+        }
+        AlertDialog.Builder(a).setTitle("글꼴 라이선스")
+            .setView(android.widget.ScrollView(a).apply { addView(tv) })
+            .setPositiveButton("확인", null).show()
+    }
+
     // ------------------------------------------------------------ per-app icon
     private const val OPT_AUTO = "@auto"
     private const val OPT_PHOTO = "@photo"

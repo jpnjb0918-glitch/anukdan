@@ -76,6 +76,7 @@ class PopupCard(ctx: Context, entries: List<MenuEntry>, onPick: () -> Unit) : Li
             }
             row.addView(TextView(ctx).apply {
                 text = e.label; textSize = 15f; setTextColor(Palette.text(ctx)); maxLines = 1
+                Fonts.apply(this)
             })
             addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
@@ -184,6 +185,7 @@ class FolderView(private val act: HomeActivity) : FrameLayout(act) {
         folder = f
         card.background = Palette.rounded(Palette.card(act), act.dp(26f).toFloat())
         title.setTextColor(Palette.text(act))
+        Fonts.apply(title, bold = true)
         title.setText(f.title)
         refresh()
         visibility = VISIBLE
@@ -457,6 +459,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     private fun subtleColor() = if (onPanel) Palette.subtle(act) else 0x33FFFFFF
 
     fun applyTheme() {
+        Fonts.apply(search)
         setBackgroundColor(
             when (act.prefs.drawerBg) {
                 "glass" -> (Palette.panel(act) and 0x00FFFFFF) or 0xB8000000.toInt()
@@ -483,6 +486,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             val tv = TextView(act).apply {
                 text = n
                 textSize = 14f
+                Fonts.apply(this)
                 setPadding(act.dp(14f), act.dp(7f), act.dp(14f), act.dp(7f))
                 val selected = !isAdd && i == tabIndex
                 setTextColor(if (selected) Color.WHITE else textColor())
@@ -585,7 +589,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             val h = TextView(act).apply {
                 text = k
                 textSize = 15f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                typeface = Fonts.regular(bold = true)
                 setTextColor(if (onPanel) Palette.TEAL else Color.WHITE)
                 setPadding(act.dp(12f), act.dp(12f), act.dp(12f), act.dp(2f))
                 contentDescription = "구역 $k"

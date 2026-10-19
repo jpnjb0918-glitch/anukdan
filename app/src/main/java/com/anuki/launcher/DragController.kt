@@ -150,14 +150,14 @@ class DragController(private val act: HomeActivity) {
         if (kind != null) { target = Target.Bar(kind); cancelEdge(); return }
 
         val draggingAppLike = item == null || item.type == HomeItem.TYPE_APP
-        val isWidget = item?.type == HomeItem.TYPE_WIDGET
+        val isWidget = item?.isWidget == true
 
         if (!isWidget && hit(act.dock, rawX, rawY)) {
             cancelEdge()
             val loc = IntArray(2); act.dock.getLocationOnScreen(loc)
             val cell = act.dock.cellAt(rawX - loc[0], rawY - loc[1])
             val occupant = act.model.itemAt(HomeItem.DOCK, 0, cell[0], 0, item)
-            val merge = if (draggingAppLike && occupant != null && occupant.type != HomeItem.TYPE_WIDGET) occupant else null
+            val merge = if (draggingAppLike && occupant != null && !occupant.isWidget) occupant else null
             act.dock.setHighlight(intArrayOf(cell[0], 0, 1, 1, if (merge != null) 1 else 0))
             target = Target.Cell(HomeItem.DOCK, 0, cell[0], 0, merge)
             return
@@ -178,7 +178,7 @@ class DragController(private val act: HomeActivity) {
             val cl = ws.page(page)
             val cell = cl.cellAt(localX, rawY - loc[1], sx, sy)
             val occupant = if (sx == 1 && sy == 1) act.model.itemAt(HomeItem.DESKTOP, page, cell[0], cell[1], item) else null
-            val merge = if (draggingAppLike && occupant != null && occupant.type != HomeItem.TYPE_WIDGET) occupant else null
+            val merge = if (draggingAppLike && occupant != null && !occupant.isWidget) occupant else null
             cl.setHighlight(intArrayOf(cell[0], cell[1], sx, sy, if (merge != null) 1 else 0))
             target = Target.Cell(HomeItem.DESKTOP, page, cell[0], cell[1], merge)
             return

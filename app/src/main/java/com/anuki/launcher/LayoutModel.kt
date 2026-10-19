@@ -26,10 +26,14 @@ class HomeItem(
         .put("screen", screen).put("x", x).put("y", y).put("spanX", spanX).put("spanY", spanY)
         .put("key", key).put("title", title).put("widgetId", widgetId).put("provider", provider).put("color", color)
 
+    /** A system widget or a built-in 아늑단 widget: desktop only, never merged into a folder. */
+    val isWidget get() = type == TYPE_WIDGET || type == TYPE_CAT_WIDGET
+
     companion object {
         const val TYPE_APP = 0
         const val TYPE_FOLDER = 1
         const val TYPE_WIDGET = 2
+        const val TYPE_CAT_WIDGET = 3 // built-in 아늑단 widget (CatWidgets): key = kind
         const val DESKTOP = -100L
         const val DOCK = -101L
 

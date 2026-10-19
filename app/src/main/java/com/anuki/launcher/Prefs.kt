@@ -53,6 +53,7 @@ class Prefs(ctx: Context) {
 
     // look
     var iconScale by intPref("icon_scale", 100)
+    var font by strPref("font", "")                    // "" = the phone's font, otherwise a key of Fonts.ALL
     var labelPx by intPref("label_px", 0)             // app name size in pixels, 0 = 기본 (12sp, see IconView)
     var theme by strPref("theme", "auto")            // auto | light | dark
     var catIcons by boolPref("cat_icons", true)

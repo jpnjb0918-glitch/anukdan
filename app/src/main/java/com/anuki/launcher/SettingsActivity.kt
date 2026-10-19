@@ -81,6 +81,13 @@ class SettingsActivity : Activity() {
 
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
+        action("글꼴", Fonts.label(prefs.font) + " · 앱 이름·폴더·앱 서랍·아늑단 위젯") {
+            Dialogs.fontPicker(this, prefs.font) { k ->
+                prefs.font = k
+                LauncherApp.dlog("font -> ${k.ifEmpty { "기본" }}")
+                build()
+            }
+        }
         action("앱 이름 글자 크기", Dialogs.labelSizeLabel(this)) {
             Dialogs.labelSize(this, prefs.labelPx) { v ->
                 prefs.labelPx = v
@@ -151,6 +158,7 @@ class SettingsActivity : Activity() {
         action("업데이트 확인", "지금 v${Updater.currentName(this)} · 새 버전이 있으면 기본판·배지판 중 골라 받아요") { Updater.checkNow(this) }
         switch("켤 때 새 버전 알림", "하루에 한 번 확인해요 · 업데이트 질문에서 '아니요'를 누르면 꺼져요", prefs.updateCheck) { prefs.updateCheck = it }
         action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
+        action("글꼴 라이선스", "주아·개구·감자꽃·하이멜로디·나눔손글씨 펜·고운돋움 (SIL Open Font License)") { Dialogs.fontLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
     }

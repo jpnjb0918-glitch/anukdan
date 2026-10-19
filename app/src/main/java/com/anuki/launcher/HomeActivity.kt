@@ -286,6 +286,7 @@ class HomeActivity : Activity(), PagedView.Listener {
                 HomeItem.TYPE_APP -> apps.find(item.key)?.let { makeAppIcon(it, item, sourceOf(item), onDesktop && homeLabels, false) }
                 HomeItem.TYPE_FOLDER -> makeFolderIcon(item, onDesktop && homeLabels)
                 HomeItem.TYPE_WIDGET -> if (onDesktop) makeWidgetView(item) else null
+                HomeItem.TYPE_CAT_WIDGET -> if (onDesktop) makeCatWidget(item) else null
                 else -> null
             } ?: continue
             if (onDesktop) {
@@ -375,6 +376,51 @@ class HomeActivity : Activity(), PagedView.Listener {
             }
         }
         return hv
+    }
+
+    private fun makeCatWidget(item: HomeItem): View {
+        val v = CatWidgets.create(this, item)
+        v.tag = item
+        v.onLongPress = { w -> onItemLongPress(w, item, null, DragInfo.SRC_WORKSPACE, w.lastRawX, w.lastRawY) }
+        v.onTap = {
+            when (item.key) {
+                CatWidgets.SEARCH -> openDrawer(true)
+                CatWidgets.MEMO -> editMemo(item)
+                CatWidgets.BATTERY -> openSystem(Intent(Intent.ACTION_POWER_USAGE_SUMMARY), "배터리 화면을 열 수 없어요")
+                else -> openSystem(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS), "시계 앱을 열 수 없어요")
+            }
+        }
+        return v
+    }
+
+    private fun openSystem(i: Intent, fail: String) {
+        try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { toast(fail) }
+    }
+
+    private fun editMemo(item: HomeItem) {
+        Dialogs.memo(this, item.title) { text ->
+            item.title = text
+            model.save()
+            LauncherApp.dlog("memo widget ${item.id}: ${text.length} chars")
+            bindAll()
+        }
+    }
+
+    /** Puts a built-in 아늑단 widget on the current page (or the first page with room). */
+    private fun placeCatWidget(key: String) {
+        val k = CatWidgets.kind(key) ?: return
+        val cols = prefs.homeCols
+        val rows = prefs.homeRows
+        val sx = k.spanX.coerceAtMost(cols)
+        val sy = k.spanY.coerceAtMost(rows)
+        val cur = workspace.currentPage.coerceIn(0, maxOf(0, workspace.pageCount - 1))
+        val v = model.findVacant(HomeItem.DESKTOP, cur, cols, rows, sx, sy)
+        val spot = if (v != null) intArrayOf(cur, v[0], v[1]) else model.findSpotAnywhere(cols, rows, sx, sy, cur)
+        model.items += HomeItem(model.newId(), HomeItem.TYPE_CAT_WIDGET, HomeItem.DESKTOP, spot[0], spot[1], spot[2], sx, sy, key = key)
+        model.save()
+        LauncherApp.dlog("cat widget $key added at page ${spot[0]} (${spot[1]},${spot[2]}) ${sx}x$sy")
+        bindAll()
+        workspace.snapToPage(spot[0])
     }
 
     private fun updateBadges() {
@@ -543,6 +589,20 @@ class HomeActivity : Activity(), PagedView.Listener {
         val list = ArrayList<MenuEntry>()
         when {
             item?.type == HomeItem.TYPE_WIDGET -> {
+                list += MenuEntry("크기 조절") { Dialogs.widgetResize(this, item) { model.save(); bindAll() } }
+                list += MenuEntry("위젯 삭제") { removeItem(item) }
+            }
+            item?.type == HomeItem.TYPE_CAT_WIDGET -> {
+                when (item.key) {
+                    CatWidgets.MEMO -> list += MenuEntry("메모 쓰기") { editMemo(item) }
+                    CatWidgets.CLOCK -> {
+                        val analog = item.provider == CatWidgets.ANALOG
+                        list += MenuEntry(if (analog) "디지털 시계로 바꾸기" else "아날로그 시계로 바꾸기") {
+                            item.provider = if (analog) "" else CatWidgets.ANALOG
+                            model.save(); bindAll()
+                        }
+                    }
+                }
                 list += MenuEntry("크기 조절") { Dialogs.widgetResize(this, item) { model.save(); bindAll() } }
                 list += MenuEntry("위젯 삭제") { removeItem(item) }
             }
@@ -750,6 +810,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
             REQ_PICK_WIDGET -> if (resultCode == RESULT_OK && data != null) {
+                data.getStringExtra("cat_widget")?.let { placeCatWidget(it); return }
                 @Suppress("DEPRECATION") val provider = data.getParcelableExtra<ComponentName>("provider")
                 @Suppress("DEPRECATION") val user = data.getParcelableExtra<UserHandle>("user")
                 if (provider != null && user != null) bindWidget(provider, user)
