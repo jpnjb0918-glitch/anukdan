@@ -647,7 +647,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
                 HiddenLock.require(act) { refresh() }
             }
         }
-        extraRow("🔎", "웹에서 '$q' 검색", null, "웹 검색") { webSearch(q) }
+        extraRow("🔎", "웹에서 '$q' 검색", WebSearch.label(act.prefs.searchEngine), "웹 검색") { webSearch(q) }
         extras.visibility = VISIBLE
     }
 
@@ -676,12 +676,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     }
 
     private fun webSearch(q: String) {
-        val i = Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q)
-        try { act.startActivity(i) } catch (_: Exception) {
-            try {
-                act.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(q))))
-            } catch (_: Exception) { Toast.makeText(act, "검색할 앱이 없어요", Toast.LENGTH_SHORT).show() }
-        }
+        if (!WebSearch.open(act, q)) Toast.makeText(act, "검색할 앱이 없어요", Toast.LENGTH_SHORT).show()
     }
 
     private fun fillPages(list: List<AppEntry>) {

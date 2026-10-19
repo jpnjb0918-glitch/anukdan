@@ -107,7 +107,8 @@ class SettingsActivity : Activity() {
                 SearchExtras.forgetContacts()
             }
         }
-        note("앱 서랍 검색창에 '12*3' 같은 계산식을 쓰면 답이 나오고(눌러서 복사), 맨 아래 '웹에서 검색'으로 인터넷 검색도 할 수 있어요.")
+        choice("인터넷 검색 엔진", WebSearch.ENGINES, prefs.searchEngine) { prefs.searchEngine = it }
+        note("앱 서랍 검색창에 '12*3' 같은 계산식을 쓰면 답이 나오고(눌러서 복사), 맨 아래 '웹에서 검색'으로 인터넷 검색도 할 수 있어요. 홈 화면에는 '아늑단 인터넷 검색' 위젯도 놓을 수 있어요.")
 
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }

@@ -46,6 +46,7 @@ class Prefs(ctx: Context) {
     var hideStatusBar by boolPref("hide_status_bar", false)
     var searchContacts by boolPref("search_contacts", false)  // 앱 서랍 검색에 연락처
     var lockHidden by boolPref("lock_hidden", false)          // 숨긴 앱은 지문·PIN 뒤에
+    var searchEngine by strPref("search_engine", "")          // 인터넷 검색: "" 휴대폰 기본 검색 앱, naver, google, daum, bing
 
     // drawer
     var drawerCols by intPref("drawer_cols", 5)

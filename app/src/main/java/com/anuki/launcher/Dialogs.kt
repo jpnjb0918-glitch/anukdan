@@ -140,6 +140,51 @@ object Dialogs {
             .setNegativeButton("취소", null).show()
     }
 
+    // ------------------------------------------------------------ internet search
+    /** Type the words for the 인터넷 검색 widget; the keyboard opens right away and its search key searches. */
+    fun webSearch(a: Activity, onSearch: (String) -> Unit) {
+        val prefs = LauncherApp.instance.prefs
+        var dialog: AlertDialog? = null
+        val et = EditText(a).apply {
+            setSingleLine(true)
+            hint = "검색어 (" + WebSearch.label(prefs.searchEngine) + ")"
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            contentDescription = "인터넷 검색어"
+            Fonts.apply(this)
+            setOnEditorActionListener { v, id, _ ->
+                if (id == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                    val q = v.text.toString().trim()
+                    if (q.isNotEmpty()) { dialog?.dismiss(); onSearch(q) }
+                    true
+                } else false
+            }
+        }
+        val wrap = LinearLayout(a).apply {
+            setPadding(a.dp(22f), a.dp(8f), a.dp(22f), 0)
+            addView(et, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        dialog = AlertDialog.Builder(a).setTitle("인터넷 검색").setView(wrap)
+            .setPositiveButton("검색") { _, _ -> et.text.toString().trim().takeIf { it.isNotEmpty() }?.let(onSearch) }
+            .setNeutralButton("검색 엔진") { _, _ -> searchEngine(a) { webSearch(a, onSearch) } }
+            .setNegativeButton("취소", null).create()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        dialog.show()
+        et.requestFocus()
+    }
+
+    /** Which engine 인터넷 검색 uses (the widget and the drawer's 웹에서 검색). */
+    fun searchEngine(a: Activity, onDone: () -> Unit) {
+        val prefs = LauncherApp.instance.prefs
+        val opts = WebSearch.ENGINES
+        AlertDialog.Builder(a).setTitle("인터넷 검색 엔진")
+            .setSingleChoiceItems(opts.map { it.second }.toTypedArray(), opts.indexOfFirst { it.first == prefs.searchEngine }.coerceAtLeast(0)) { d, which ->
+                d.dismiss()
+                prefs.searchEngine = opts[which].first
+                LauncherApp.dlog("search engine -> ${opts[which].first.ifEmpty { "기본" }}")
+                onDone()
+            }.setNegativeButton("취소", null).show()
+    }
+
     // ------------------------------------------------------------ launcher font
     /** Each font shown in itself; picks the key ("" = the phone's font). */
     fun fontPicker(a: Activity, current: String, onPick: (String) -> Unit) {

@@ -1109,7 +1109,7 @@ find_widget() {
 }
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do add_cat_widget "$W"; done
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모" "아늑단 인터넷 검색"; do add_cat_widget "$W"; done
 adb shell input keyevent KEYCODE_HOME
 sleep 1
 adb logcat -d | grep -E "cat widget" | tail -4 >> $LOG
@@ -1184,6 +1184,61 @@ if [ -n "$Q" ]; then
   adb shell input keyevent KEYCODE_BACK
   sleep 1
 fi
+
+# internet search: type and search (phone's default search app), then Naver, then the microphone
+top_activity() { adb shell dumpsys activity activities | grep -E "topResumedActivity" | head -1 | grep -oE "[a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+" | head -1; }
+web_search_type() {
+  local X=$(find_widget "아늑단 인터넷 검색")
+  echo "web widget=$X" >> $LOG
+  [ -z "$X" ] && return 1
+  set -- $X
+  adb shell input tap $(( $1 - 200 )) $2
+  sleep 2
+  dump wsd
+  E=$(ui shots/wsd.xml anydesc "인터넷 검색어")
+  [ -n "$E" ] && adb shell input tap $E
+  adb shell input text "anuki"
+  sleep 1
+  K=$(ui shots/wsd.xml text "검색")
+  [ -n "$K" ] && adb shell input tap $K
+  sleep 5
+  return 0
+}
+if web_search_type; then
+  shot 87a-web-search-default
+  echo "web search (기본) opened: $(top_activity)" >> $LOG
+fi
+X=$(find_widget "아늑단 인터넷 검색")
+if [ -n "$X" ]; then
+  adb shell input swipe $X $X 1500
+  sleep 1
+  dump wmenu2
+  M=$(ui shots/wmenu2.xml textprefix "검색 엔진")
+  [ -n "$M" ] && adb shell input tap $M
+  sleep 1
+  dump weng
+  N=$(ui shots/weng.xml text "네이버")
+  [ -n "$N" ] && adb shell input tap $N
+  sleep 2
+fi
+if web_search_type; then
+  shot 87b-web-search-naver
+  echo "web search (네이버) opened: $(top_activity)" >> $LOG
+fi
+X=$(find_widget "아늑단 인터넷 검색")
+if [ -n "$X" ]; then
+  set -- $X
+  shot 87c-web-widget
+  # the microphone sits at the right end of the bar (the 4-cell bar starts at the left edge, so its right end is ~2x its centre)
+  adb shell input tap $(( $1 * 2 - 90 )) $2
+  sleep 4
+  shot 87d-voice-search
+  echo "voice search opened: $(top_activity)" >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+fi
+adb logcat -d | grep -E "web search|search engine ->" | tail -4 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
 
 step "글꼴 (설정 → 글꼴)"
 for FONT in "주아" "나눔손글씨 펜"; do
@@ -1262,7 +1317,7 @@ fi
 adb logcat -d | grep -E "widget resized|widget resize mode" | tail -6 >> $LOG
 
 # remove the widgets again (long-press → 위젯 삭제)
-for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모" "아늑단 인터넷 검색"; do
   X=$(find_widget "$W")
   if [ -n "$X" ]; then
     adb shell input swipe $X $X 1500
@@ -1274,7 +1329,7 @@ for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑�
   fi
 done
 LEFT=0
-for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do find_widget "$W" >/dev/null && LEFT=$((LEFT + 1)); done
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모" "아늑단 인터넷 검색"; do find_widget "$W" >/dev/null && LEFT=$((LEFT + 1)); done
 echo "widgets left: $LEFT" >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2

@@ -451,12 +451,25 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.onTap = {
             when (item.key) {
                 CatWidgets.SEARCH -> openDrawer(true)
+                CatWidgets.WEB -> if ((v as? WebSearchWidget)?.micHit() == true) voiceSearch() else
+                    Dialogs.webSearch(this) { q -> if (!WebSearch.open(this, q)) toast("검색할 앱이 없어요") }
                 CatWidgets.MEMO -> editMemo(item)
                 CatWidgets.BATTERY -> openSystem(Intent(Intent.ACTION_POWER_USAGE_SUMMARY), "배터리 화면을 열 수 없어요")
                 else -> openSystem(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS), "시계 앱을 열 수 없어요")
             }
         }
         return v
+    }
+
+    /** 인터넷 검색 위젯의 마이크: the phone's speech recognition, then the chosen search engine. */
+    private fun voiceSearch() {
+        val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+            .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "검색할 말을 해 주세요")
+        try {
+            @Suppress("DEPRECATION") startActivityForResult(i, REQ_VOICE)
+        } catch (_: Exception) { toast("이 휴대폰에서는 음성 검색을 쓸 수 없어요") }
     }
 
     private fun openSystem(i: Intent, fail: String) {
@@ -705,6 +718,9 @@ class HomeActivity : Activity(), PagedView.Listener {
             item?.type == HomeItem.TYPE_CAT_WIDGET -> {
                 when (item.key) {
                     CatWidgets.MEMO -> list += MenuEntry("메모 쓰기") { editMemo(item) }
+                    CatWidgets.WEB -> list += MenuEntry("검색 엔진: " + WebSearch.label(prefs.searchEngine)) {
+                        Dialogs.searchEngine(this) { bindAll() }
+                    }
                     CatWidgets.CLOCK -> {
                         val analog = item.provider == CatWidgets.ANALOG
                         list += MenuEntry(if (analog) "디지털 시계로 바꾸기" else "아날로그 시계로 바꾸기") {
@@ -929,6 +945,11 @@ class HomeActivity : Activity(), PagedView.Listener {
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
             REQ_PICK_PHOTO -> if (resultCode == RESULT_OK) data?.data?.let { onPhotoPicked(it) }
             HiddenLock.REQ_CONFIRM -> HiddenLock.onResult(resultCode == RESULT_OK)
+            REQ_VOICE -> if (resultCode == RESULT_OK) {
+                data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { q ->
+                    if (!WebSearch.open(this, q)) toast("검색할 앱이 없어요")
+                }
+            }
             MovingWallpaper.REQ_PICK -> if (resultCode == RESULT_OK) data?.data?.let { MovingWallpaper.onPicked(this, it) }
             REQ_CONFIG_WIDGET -> if (resultCode == RESULT_OK && pendingWidgetId != -1) placeWidget(pendingWidgetId)
             else if (pendingWidgetId != -1) { widgetHost.deleteAppWidgetId(pendingWidgetId); pendingWidgetId = -1 }
@@ -966,6 +987,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         const val REQ_CONFIG_WIDGET = 13
         const val REQ_DEFAULT_HOME = 14
         const val REQ_PICK_PHOTO = 15
+        const val REQ_VOICE = 16
     }
 }
 

@@ -43,6 +43,7 @@ object CatWidgets {
     const val BATTERY = "battery"
     const val SEARCH = "search"
     const val MEMO = "memo"
+    const val WEB = "web"
     const val ANALOG = "analog"
 
     class Kind(val key: String, val label: String, val desc: String, val spanX: Int, val spanY: Int)
@@ -51,6 +52,7 @@ object CatWidgets {
         Kind(CLOCK, "아늑단 시계", "시간과 날짜 · 길게 눌러 아날로그 시계로 바꿀 수 있어요", 4, 2),
         Kind(BATTERY, "아늑단 배터리", "남은 배터리와 충전 상태", 2, 2),
         Kind(SEARCH, "아늑단 검색창", "누르면 앱을 검색해요", 4, 1),
+        Kind(WEB, "아늑단 인터넷 검색", "누르면 인터넷 검색, 마이크는 말로 검색 · 길게 눌러 검색 엔진 고르기", 4, 1),
         Kind(MEMO, "아늑단 메모", "눌러서 메모를 써요", 2, 2),
     )
 
@@ -59,6 +61,7 @@ object CatWidgets {
     fun create(ctx: Context, item: HomeItem): CatWidgetView = when (item.key) {
         BATTERY -> BatteryWidget(ctx, item)
         SEARCH -> SearchWidget(ctx, item)
+        WEB -> WebSearchWidget(ctx, item)
         MEMO -> MemoWidget(ctx, item)
         else -> ClockWidget(ctx, item)
     }
@@ -124,6 +127,11 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
         private set
     var lastRawY = 0f
         private set
+    /** Where the last touch was, in this view (for widgets with two buttons). */
+    var lastX = 0f
+        private set
+    var lastY = 0f
+        private set
 
     protected val density = resources.displayMetrics.density
     /** px per icon unit (the icon drawings are 512 units wide). */
@@ -162,6 +170,8 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         lastRawX = event.rawX
         lastRawY = event.rawY
+        lastX = event.x
+        lastY = event.y
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start()
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> animate().scaleX(1f).scaleY(1f).setDuration(120).start()
@@ -553,10 +563,13 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
 }
 
 /** 검색창: a paper bar with the cat peeking over its left end; tapping opens the app search. */
-class SearchWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
+open class SearchWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
     override val paperTile = true
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = INK; strokeCap = Paint.Cap.ROUND }
+    protected val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = INK; strokeCap = Paint.Cap.ROUND }
     private val hint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = MUTED }
+    protected open fun hintText() = "앱 검색"
+    /** Space kept free on the right end of the bar (for the microphone). */
+    protected open fun rightSpace() = 0f
 
     override fun layoutTile(w: Int, h: Int) {
         val pad = dp(4f)
@@ -586,8 +599,76 @@ class SearchWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         hint.typeface = Fonts.regular(false)
         hint.textSize = ph * 0.36f
         val tx = gx + gr * 2.1f
-        val text = TextUtils.ellipsize("앱 검색", hint, panel.right - radius * 0.6f - tx, TextUtils.TruncateAt.END).toString()
+        val text = TextUtils.ellipsize(hintText(), hint, panel.right - radius * 0.6f - rightSpace() - tx, TextUtils.TruncateAt.END).toString()
         c.drawText(text, tx, panel.centerY() - (hint.ascent() + hint.descent()) / 2, hint)
+    }
+}
+
+/** 인터넷 검색: the same bar for the web, with the search engine's name and a microphone on the right end. */
+class WebSearchWidget(ctx: Context, item: HomeItem) : SearchWidget(ctx, item) {
+    override fun hintText() = "인터넷 검색 · " + WebSearch.label(LauncherApp.instance.prefs.searchEngine, short = true)
+    override fun rightSpace() = panel.height() * 0.9f
+
+    init { contentDescription = "아늑단 인터넷 검색" }
+
+    /** True when the last tap was on the microphone. */
+    fun micHit(): Boolean = lastX > panel.right - panel.height() * 1.1f
+
+    override fun drawContent(c: Canvas) {
+        super.drawContent(c)
+        // microphone: capsule, cradle and stand in the icons' ink
+        val ph = panel.height()
+        val cx = panel.right - ph * 0.55f
+        val cy = panel.centerY() - ph * 0.05f
+        val w = ph * 0.13f
+        val h = ph * 0.2f
+        p.strokeWidth = max(dp(1.5f), 12f * u)
+        c.drawRoundRect(cx - w, cy - h, cx + w, cy + h * 0.55f, w, w, p)
+        val arc = RectF(cx - w * 1.9f, cy - h * 0.9f, cx + w * 1.9f, cy + h * 1.15f)
+        c.drawArc(arc, 20f, 140f, false, p)
+        c.drawLine(cx, cy + h * 1.15f, cx, cy + h * 1.6f, p)
+    }
+}
+
+/** Where 인터넷 검색 sends the words (Prefs.searchEngine): the phone's own search app, or a search site. */
+object WebSearch {
+    val ENGINES = listOf(
+        "" to "휴대폰 기본 검색 앱",
+        "naver" to "네이버",
+        "google" to "구글",
+        "daum" to "다음",
+        "bing" to "빙",
+    )
+
+    fun label(key: String, short: Boolean = false): String =
+        if (key.isEmpty() && short) "기본" else ENGINES.firstOrNull { it.first == key }?.second ?: ENGINES[0].second
+
+    private fun url(key: String, q: String): String? {
+        val e = android.net.Uri.encode(q)
+        return when (key) {
+            "naver" -> "https://search.naver.com/search.naver?query=$e"
+            "google" -> "https://www.google.com/search?q=$e"
+            "daum" -> "https://search.daum.net/search?q=$e"
+            "bing" -> "https://www.bing.com/search?q=$e"
+            else -> null
+        }
+    }
+
+    /** Opens the results for [q]; false when nothing on the phone can show them. */
+    fun open(ctx: Context, q: String, key: String = LauncherApp.instance.prefs.searchEngine): Boolean {
+        val site = url(key, q)
+        val tries = ArrayList<Intent>()
+        if (site != null) tries += Intent(Intent.ACTION_VIEW, android.net.Uri.parse(site))
+        tries += Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q)
+        tries += Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url("google", q)))
+        for (i in tries) {
+            try {
+                ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                LauncherApp.dlog("web search (${key.ifEmpty { "기본" }}): ${i.action} ${i.data ?: ""}")
+                return true
+            } catch (_: Exception) { }
+        }
+        return false
     }
 }
 
