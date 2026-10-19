@@ -806,14 +806,14 @@ sleep 2
 step "app name size in pixels (설정 → 앱 이름 글자 크기)"
 if open_settings_row "앱 이름 글자 크기"; then
   dump lsz
-  echo "size now: $(grep -o 'text="[0-9]*"' shots/lsz.xml | head -1)" >> $LOG
+  echo "size now: $(grep -o 'text="[0-9][0-9]*"' shots/lsz.xml | head -1)" >> $LOG
   PLUS=$(ui shots/lsz.xml anydesc "글자 1픽셀 크게")
   echo "plus button=$PLUS" >> $LOG
   if [ -n "$PLUS" ]; then
     for i in $(seq 1 10); do adb shell input tap $PLUS; done
     sleep 1
     dump lsz2
-    echo "after +10: $(grep -o 'text="[0-9]*"' shots/lsz2.xml | head -1)" >> $LOG
+    echo "after +10: $(grep -o 'text="[0-9][0-9]*"' shots/lsz2.xml | head -1)" >> $LOG
     shot 65-label-size-dialog
     OK=$(ui shots/lsz2.xml text "확인")
     [ -n "$OK" ] && adb shell input tap $OK
@@ -840,7 +840,7 @@ if open_settings_row "앱 이름 글자 크기"; then
     adb shell input text 20
     sleep 1
     dump lsz4
-    echo "typed: $(grep -o 'text="[0-9]*"' shots/lsz4.xml | head -1)" >> $LOG
+    echo "typed: $(grep -o 'text="[0-9][0-9]*"' shots/lsz4.xml | head -1)" >> $LOG
     shot 68-label-size-typed
     OK=$(ui shots/lsz4.xml text "확인")
     echo "ok button=$OK" >> $LOG
