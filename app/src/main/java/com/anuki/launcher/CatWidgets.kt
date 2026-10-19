@@ -373,7 +373,8 @@ class ClockWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         contentDescription = "아늑단 시계: 아날로그 ${hour}시 ${minute}분, ${day}일 $week"
         // a wide widget has the date beside the clock face; a square one shows the day in a window at 3 o'clock
         val wide = area.width() >= area.height() * 1.55f
-        val r = min(area.width(), area.height()) / 2f - dp(2f)
+        var r = min(area.width(), area.height()) / 2f - dp(2f)
+        if (wide) r = min(r, area.width() / 3.85f * 0.96f) // face + gap + date must fit inside the tile
         if (r <= 0f) return
         val blockW = r * 1.5f
         val gap = r * 0.35f
