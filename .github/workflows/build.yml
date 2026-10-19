@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags, for the "바뀐 점" list in the release notes
 
       - uses: actions/setup-java@v5
         with:
@@ -72,7 +74,18 @@ jobs:
           else
             NOTE="임시(디버그) 키로 서명했어요. 다음 버전을 설치하려면 먼저 지워야 할 수 있어요."
           fi
-          BODY="자동 빌드 (커밋 ${GITHUB_SHA::7}). $NOTE
+          # what changed since the previous (non-test) release: first line of each commit; the app shows this list
+          PREV=$(gh api "repos/${{ github.repository }}/releases?per_page=30" --jq '[.[] | select(.prerelease|not)][0].tag_name' 2>/dev/null || true)
+          if [ -n "$PREV" ] && git rev-parse -q --verify "refs/tags/$PREV" >/dev/null; then
+            CHANGES=$(git log --no-merges --pretty=format:'- %s' "$PREV"..HEAD | head -20)
+          else
+            CHANGES=$(git log -1 --pretty=format:'- %s')
+          fi
+          [ -z "$CHANGES" ] && CHANGES="- (바뀐 내용 없이 다시 빌드)"
+          BODY="## 바뀐 점
+          $CHANGES
+
+          자동 빌드 (커밋 ${GITHUB_SHA::7}). $NOTE
 
           - anuki-launcher.apk: 기본판. 휴대폰에서 내려받아 설치하세요. 알림 배지는 없어요.
           - anuki-launcher-badge.apk: 알림 배지 포함판. 알림을 읽는 기능이 있어서 휴대폰에서 바로 설치하면 Google Play 프로텍트가 막을 수 있어요(일부 국가). 두 파일은 같은 앱이라 하나만 설치하세요."

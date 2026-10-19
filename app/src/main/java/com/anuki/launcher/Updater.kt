@@ -29,12 +29,30 @@ import java.net.URL
  *  - 아니요 on the automatic question turns the automatic question off (설정 → 업데이트 확인 still works).
  */
 object Updater {
-    private const val LATEST = "https://api.github.com/repos/jpnjb0918-glitch/anukdan/releases/latest"
+    private const val REPO = "https://api.github.com/repos/jpnjb0918-glitch/anukdan"
+    private const val RELEASES = "$REPO/releases?per_page=30"
     private const val STANDARD = "anuki-launcher.apk"
     private const val BADGE = "anuki-launcher-badge.apk"
     private const val DAY = 20L * 60 * 60 * 1000
 
-    class Release(val tag: String, val number: Long, val standardUrl: String?, val badgeUrl: String?, val date: String)
+    /** Newest release, plus [changes]: the "바뀐 점" lines of every release newer than the installed one, newest first. */
+    class Release(
+        val tag: String, val number: Long, val standardUrl: String?, val badgeUrl: String?, val date: String,
+        val changes: List<String>,
+    )
+
+    /** "- …" lines under "## 바뀐 점" in a release's notes. */
+    private fun changeLines(body: String): List<String> {
+        val out = ArrayList<String>()
+        var inside = false
+        for (raw in body.lines()) {
+            val l = raw.trim()
+            if (l.startsWith("## ")) { inside = l.contains("바뀐 점"); continue }
+            if (!inside) continue
+            if (l.startsWith("- ")) out += l.removePrefix("- ").trim() else if (l.isNotEmpty() && out.isNotEmpty()) break
+        }
+        return out
+    }
 
     fun currentNumber(ctx: Context): Long = try {
         val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
@@ -47,18 +65,50 @@ object Updater {
 
     private fun isDebug(ctx: Context) = (ctx.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    /** Latest release from GitHub, or null (no network, rate limit, …). Runs on the calling thread. */
-    fun fetch(): Release? = try {
-        val c = URL(LATEST).openConnection() as HttpURLConnection
+    private fun get(url: String): String {
+        val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 10000
         c.readTimeout = 10000
         c.setRequestProperty("Accept", "application/vnd.github+json")
         c.setRequestProperty("User-Agent", "anuki-launcher")
-        val body = c.inputStream.bufferedReader().use { it.readText() }
-        c.disconnect()
-        val o = JSONObject(body)
+        try {
+            return c.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /** First line of every commit between two release tags, newest first (works for releases made before notes existed). */
+    private fun compareChanges(fromTag: String, toTag: String): List<String> = try {
+        val o = JSONObject(get("$REPO/compare/$fromTag...$toTag"))
+        val commits = o.getJSONArray("commits")
+        (0 until commits.length()).map { commits.getJSONObject(it).getJSONObject("commit").optString("message").lineSequence().first().trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("Merge ") }
+            .reversed()
+    } catch (e: Exception) {
+        LauncherApp.dlog("update compare failed: $e")
+        emptyList()
+    }
+
+    /** Latest release from GitHub with what changed since [current], or null (no network, rate limit, …). Runs on the calling thread. */
+    fun fetch(current: Long): Release? = try {
+        val arr = org.json.JSONArray(get(RELEASES))
+        val list = (0 until arr.length()).map { arr.getJSONObject(it) }
+            .filter { !it.optBoolean("prerelease") && !it.optBoolean("draft") && it.optString("tag_name").startsWith("v") }
+            .sortedByDescending { it.optString("tag_name").substringAfterLast('.').toLongOrNull() ?: 0L }
+        val o = list.first()
         val tag = o.getString("tag_name")
         val number = tag.substringAfterLast('.').toLongOrNull() ?: 0L
+        val changes = LinkedHashSet<String>()
+        if (number > current) {
+            // the commit list between the installed version's tag and the newest one; release notes as a fallback
+            changes += compareChanges("v1.0.$current", tag)
+            if (changes.isEmpty()) for (rel in list) {
+                val n = rel.optString("tag_name").substringAfterLast('.').toLongOrNull() ?: 0L
+                if (n <= current) break
+                changes += changeLines(rel.optString("body"))
+            }
+        }
         var std: String? = null
         var badge: String? = null
         val assets = o.optJSONArray("assets")
@@ -69,7 +119,7 @@ object Updater {
                 BADGE -> badge = a.optString("browser_download_url")
             }
         }
-        Release(tag, number, std, badge, o.optString("published_at").take(10))
+        Release(tag, number, std, badge, o.optString("published_at").take(10), changes.toList())
     } catch (e: Exception) {
         LauncherApp.dlog("update check failed: $e")
         null
@@ -159,7 +209,7 @@ object Updater {
         if (now - prefs.sp.getLong("update_last_check", 0L) < DAY) return
         prefs.sp.edit().putLong("update_last_check", now).apply()
         Thread {
-            val r = fetch() ?: return@Thread
+            val r = fetch(currentNumber(a)) ?: return@Thread
             if (r.number > currentNumber(a)) a.runOnUiThread { if (!a.isFinishing && !a.isDestroyed) ask(a, r, auto = true) }
         }.start()
     }
@@ -168,7 +218,7 @@ object Updater {
     fun checkNow(a: Activity) {
         Toast.makeText(a, "새 버전을 확인하는 중…", Toast.LENGTH_SHORT).show()
         Thread {
-            val r = fetch()
+            val r = fetch(currentNumber(a))
             a.runOnUiThread {
                 if (a.isFinishing || a.isDestroyed) return@runOnUiThread
                 val cur = currentNumber(a)
@@ -184,7 +234,7 @@ object Updater {
 
     private fun ask(a: Activity, r: Release, auto: Boolean) {
         AlertDialog.Builder(a).setTitle("새 버전이 있어요")
-            .setMessage("지금 버전: v${currentName(a)}\n새 버전: ${r.tag} (${r.date})\n\n업데이트하시겠습니까?")
+            .setMessage("지금 버전: v${currentName(a)}\n새 버전: ${r.tag} (${r.date})\n\n" + summary(r) + "업데이트하시겠습니까?")
             .setPositiveButton("예") { _, _ -> chooseEdition(a, r) }
             .setNegativeButton("아니요") { _, _ ->
                 // "아니요" turns the automatic question off; checking by hand stays available
@@ -196,6 +246,14 @@ object Updater {
                 LauncherApp.dlog("update: declined (auto=$auto), automatic check off")
             }
             .show()
+    }
+
+    /** Short "바뀐 점" list for the question (up to 6 lines, each kept to one line). */
+    private fun summary(r: Release): String {
+        if (r.changes.isEmpty()) return ""
+        val shown = r.changes.take(6).joinToString("\n") { "• " + if (it.length > 46) it.take(45) + "…" else it }
+        val more = if (r.changes.size > 6) "\n그 밖에 ${r.changes.size - 6}가지" else ""
+        return "바뀐 점\n$shown$more\n\n"
     }
 
     private fun chooseEdition(a: Activity, r: Release) {

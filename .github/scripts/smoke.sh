@@ -803,7 +803,7 @@ for edition in 배지판 기본판 아니요; do
   if open_settings_row "업데이트 확인"; then
     sleep 6
     dump upd
-    grep -o 'text="[^"]*"' shots/upd.xml | grep -E "새 버전|지금 버전|최신" | head -3 | tr '\n' ' ' >> $LOG; echo >> $LOG
+    grep -o 'text="[^"]*"' shots/upd.xml | grep -E "새 버전|지금 버전|최신|바뀐 점" | head -3 | cut -c1-400 | tr '\n' ' ' >> $LOG; echo >> $LOG
     if [ "$edition" = "아니요" ]; then
       N=$(ui shots/upd.xml text "아니요")
       echo "no button=$N" >> $LOG
