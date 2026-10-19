@@ -1094,6 +1094,19 @@ add_cat_widget() {
   return 0
 }
 widget_at() { dump wh; ui shots/wh.xml descprefix "$1"; }
+# go home (page 1) and page right until the widget $1 is in view; prints its centre
+find_widget() {
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  local X=""
+  for i in 1 2 3 4; do
+    X=$(widget_at "$1")
+    [ -n "$X" ] && { echo "$X"; return 0; }
+    adb shell input swipe 900 1200 150 1200 300
+    sleep 2
+  done
+  return 1
+}
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do add_cat_widget "$W"; done
@@ -1106,7 +1119,7 @@ dump wh
 grep -o 'content-desc="아늑단 [^"]*"' shots/wh.xml | tr '\n' ' ' >> $LOG; echo >> $LOG
 
 # memo: tap, type, save
-M=$(widget_at "아늑단 메모")
+M=$(find_widget "아늑단 메모")
 echo "memo widget=$M" >> $LOG
 if [ -n "$M" ]; then
   adb shell input tap $M
@@ -1122,10 +1135,13 @@ if [ -n "$M" ]; then
   S=$(ui shots/memo2.xml text "저장")
   [ -n "$S" ] && adb shell input tap $S
   sleep 2
-  echo "memo after save: $(widget_at '아늑단 메모'; grep -o 'content-desc="아늑단 메모[^"]*"' shots/wh.xml)" >> $LOG
+  shot 86-widget-memo
+  dump wh; echo "memo after save: $(grep -o 'content-desc="아늑단 메모[^"]*"' shots/wh.xml)" >> $LOG
 fi
 # battery: low, then charging
+find_widget "아늑단 배터리" >/dev/null
 adb shell dumpsys battery unplug
+adb shell dumpsys battery set status 3
 adb shell dumpsys battery set level 12
 sleep 2
 shot 82-widget-battery-low
@@ -1139,9 +1155,7 @@ dump wh; echo "battery charging: $(grep -o 'content-desc="아늑단 배터리[^"
 adb shell dumpsys battery reset
 
 # the clock: analog face from the long-press menu, on the clock's page
-adb shell input keyevent KEYCODE_HOME
-sleep 2
-for i in 1 2 3; do C=$(widget_at "아늑단 시계"); [ -n "$C" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
+C=$(find_widget "아늑단 시계")
 echo "clock widget=$C" >> $LOG
 if [ -n "$C" ]; then
   shot 84-widget-clock-digital
@@ -1157,14 +1171,13 @@ if [ -n "$C" ]; then
 fi
 
 # search: opens the drawer with the search box
-adb shell input keyevent KEYCODE_HOME
-sleep 2
-for i in 1 2 3; do Q=$(widget_at "아늑단 검색창"); [ -n "$Q" ] && break; adb shell input swipe 150 1200 900 1200 300; sleep 2; done
+Q=$(find_widget "아늑단 검색창")
 echo "search widget=$Q" >> $LOG
 if [ -n "$Q" ]; then
+  shot 86b-widget-search-page
   adb shell input tap $Q
   sleep 2
-  shot 86-widget-search-tapped
+  shot 86c-widget-search-tapped
   echo "ime shown: $(adb shell dumpsys input_method | grep -c 'mInputShown=true')" >> $LOG
   adb shell input keyevent KEYCODE_BACK
   sleep 1
@@ -1182,9 +1195,7 @@ for FONT in "주아" "나눔손글씨 펜"; do
     [ -n "$P" ] && adb shell input tap $P
     sleep 1
   fi
-  adb shell input keyevent KEYCODE_HOME
-  sleep 3
-  for i in 1 2 3; do C=$(widget_at "아늑단 시계"); [ -n "$C" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
+  find_widget "아늑단 메모" >/dev/null
   if [ "$FONT" = "주아" ]; then shot 88-font-jua-widgets; else shot 89-font-nanumpen-widgets; fi
   open_drawer
   if [ "$FONT" = "주아" ]; then shot 90-font-jua-drawer; fi
@@ -1209,8 +1220,7 @@ sleep 2
 
 # remove the widgets again (long-press → 위젯 삭제)
 for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do
-  for i in 1 2 3; do X=$(widget_at "$W"); [ -n "$X" ] && break; adb shell input swipe 900 1200 150 1200 300; sleep 2; done
-  [ -z "$X" ] && for i in 1 2 3; do X=$(widget_at "$W"); [ -n "$X" ] && break; adb shell input swipe 150 1200 900 1200 300; sleep 2; done
+  X=$(find_widget "$W")
   if [ -n "$X" ]; then
     adb shell input swipe $X $X 1500
     sleep 1
@@ -1220,8 +1230,9 @@ for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑�
     sleep 2
   fi
 done
-dump wh
-echo "widgets left: $(grep -c 'content-desc="아늑단 ' shots/wh.xml)" >> $LOG
+LEFT=0
+for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do find_widget "$W" >/dev/null && LEFT=$((LEFT + 1)); done
+echo "widgets left: $LEFT" >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 

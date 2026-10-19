@@ -371,10 +371,26 @@ class ClockWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         val day = now.get(Calendar.DAY_OF_MONTH)
         val week = WEEK[now.get(Calendar.DAY_OF_WEEK) - 1]
         contentDescription = "아늑단 시계: 아날로그 ${hour}시 ${minute}분, ${day}일 $week"
+        // a wide widget has the date beside the clock face; a square one shows the day in a window at 3 o'clock
+        val wide = area.width() >= area.height() * 1.55f
         val r = min(area.width(), area.height()) / 2f - dp(2f)
         if (r <= 0f) return
-        val cx = area.centerX()
+        val blockW = r * 1.5f
+        val gap = r * 0.35f
+        val groupLeft = area.centerX() - (2 * r + gap + blockW) / 2
+        val cx = if (wide) groupLeft + r else area.centerX()
         val cy = area.centerY()
+        if (wide) {
+            val bx = groupLeft + 2 * r + gap + blockW / 2
+            outlined(c, "${now.get(Calendar.MONTH) + 1}월", bx, cy - r * 0.55f, r * 0.26f)
+            outlined(c, "$day", bx, cy + r * 0.28f, r * 0.78f)
+            small.typeface = Fonts.regular(true)
+            small.textSize = r * 0.24f
+            val pw = min(blockW + gap * 0.8f, small.measureText(week) + r * 0.36f * 1.1f)
+            box.set(bx - pw / 2, cy + r * 0.48f, bx + pw / 2, cy + r * 0.48f + r * 0.36f)
+            label(c, box)
+            c.drawText(week, box.centerX(), box.centerY() - (small.ascent() + small.descent()) / 2, small)
+        }
         // dial
         p.style = Paint.Style.FILL
         p.shader = LinearGradient(0f, cy - r, 0f, cy + r, Color.WHITE, PAPER_2, Shader.TileMode.CLAMP)
@@ -393,10 +409,21 @@ class ClockWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
             p.strokeWidth = r * if (major) 0.055f else 0.032f
             c.drawLine(cx + r1 * sin(a).toFloat(), cy - r1 * cos(a).toFloat(), cx + r2 * sin(a).toFloat(), cy - r2 * cos(a).toFloat(), p)
         }
-        // date in the lower half
-        small.typeface = Fonts.regular(true)
-        small.textSize = r * 0.17f
-        c.drawText("${day}일 ${week.take(1)}", cx, cy + r * 0.5f, small)
+        if (!wide) {
+            // day of the month in a small window at 3 o'clock, like a watch
+            small.typeface = Fonts.regular(true)
+            small.textSize = r * 0.17f
+            val ww = max(r * 0.3f, small.measureText("$day") + r * 0.12f)
+            box.set(cx + r * 0.5f - ww / 2, cy - r * 0.13f, cx + r * 0.5f + ww / 2, cy + r * 0.13f)
+            p.style = Paint.Style.FILL
+            p.color = Color.WHITE
+            c.drawRoundRect(box, r * 0.05f, r * 0.05f, p)
+            p.style = Paint.Style.STROKE
+            p.color = INK
+            p.strokeWidth = r * 0.025f
+            c.drawRoundRect(box, r * 0.05f, r * 0.05f, p)
+            c.drawText("$day", box.centerX(), box.centerY() - (small.ascent() + small.descent()) / 2, small)
+        }
         // hands
         val ha = Math.toRadians(((hour % 12) + minute / 60.0) * 30.0)
         val ma = Math.toRadians(minute * 6.0)
@@ -447,8 +474,9 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         level = if (l >= 0 && s > 0) (l * 100 / s).coerceIn(0, 100) else -1
         val st = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
         val plugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
-        full = st == BatteryManager.BATTERY_STATUS_FULL || (plugged && level >= 100)
-        charging = st == BatteryManager.BATTERY_STATUS_CHARGING || full
+        // only while plugged in: some phones keep reporting "charging" for a moment after the cable comes out
+        full = plugged && (st == BatteryManager.BATTERY_STATUS_FULL || level >= 100)
+        charging = plugged && (st == BatteryManager.BATTERY_STATUS_CHARGING || full)
         contentDescription = "아늑단 배터리: ${if (level >= 0) "$level%" else "알 수 없음"}${if (charging) ", 충전 중" else ""}"
     }
 
