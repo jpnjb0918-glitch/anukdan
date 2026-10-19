@@ -116,6 +116,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onPause() {
         super.onPause()
+        Updater.onPaused(this)
         movingBg.onHomeVisible(false)
     }
 
@@ -123,6 +124,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         super.onResume()
         movingBg.apply(MovingWallpaper.launcherValue(this))
         movingBg.onHomeVisible(true)
+        Updater.onResumed(this)
         Updater.maybeCheck(this)
         if (apps.loaded && prefs.version != boundVersion) {
             icons.invalidate()

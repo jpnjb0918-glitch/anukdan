@@ -798,11 +798,22 @@ sleep 2
 
 step "new version check (설정 → 업데이트 확인)"
 # the test build's version is the test run number, older than the newest release, so a new version is offered
-for edition in 배지판 기본판; do
+adb shell appops set com.anuki.launcher REQUEST_INSTALL_PACKAGES allow 2>&1 | tee -a $LOG
+for edition in 배지판 기본판 아니요; do
   if open_settings_row "업데이트 확인"; then
     sleep 6
     dump upd
     grep -o 'text="[^"]*"' shots/upd.xml | grep -E "새 버전|지금 버전|최신" | head -3 | tr '\n' ' ' >> $LOG; echo >> $LOG
+    if [ "$edition" = "아니요" ]; then
+      N=$(ui shots/upd.xml text "아니요")
+      echo "no button=$N" >> $LOG
+      [ -n "$N" ] && adb shell input tap $N
+      sleep 2
+      shot 75-update-declined
+      adb shell input keyevent KEYCODE_HOME
+      sleep 2
+      continue
+    fi
     Y=$(ui shots/upd.xml text "예")
     if [ -n "$Y" ]; then
       [ "$edition" = "배지판" ] && shot 70-update-ask
@@ -820,14 +831,28 @@ for edition in 배지판 기본판; do
       OK=$(ui shots/updd.xml text "확인")
       [ -n "$OK" ] && adb shell input tap $OK
       sleep 1
+      if [ "$edition" = "기본판" ]; then
+        # the installer should open by itself once the download finishes (settings screen still in front)
+        for i in $(seq 1 12); do
+          sleep 5
+          adb shell dumpsys activity activities 2>/dev/null | grep -qiE "packageinstaller|InstallStart|PackageInstallerActivity" && break
+        done
+        sleep 2
+        shot 74-update-installer
+        dump inst
+        echo "installer: $(adb shell dumpsys activity activities | grep -iE 'topResumedActivity|mResumedActivity' | head -2 | tr -s ' ')" >> $LOG
+        grep -o 'text="[^"]*"' shots/inst.xml | head -6 | tr '\n' ' ' >> $LOG; echo >> $LOG
+        adb shell input keyevent KEYCODE_BACK
+        sleep 1
+      fi
     fi
   fi
   adb shell input keyevent KEYCODE_HOME
   sleep 2
 done
-sleep 25
 echo "downloaded: $(adb shell ls -la /sdcard/Download/ 2>/dev/null | grep anuki-launcher | tr '\n' ' ')" >> $LOG
-adb logcat -d | grep -E "update" | grep Anuki | tail -6 >> $LOG
+adb logcat -d | grep Anuki | grep -E "update" | tail -10 >> $LOG
+# turn the automatic question back on is not needed in the test (debug builds never ask by themselves)
 
 step "settings"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG

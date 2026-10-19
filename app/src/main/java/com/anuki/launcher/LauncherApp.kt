@@ -23,6 +23,7 @@ class LauncherApp : Application() {
         model = LayoutModel(this)
         model.load()
         apps.reload()
+        Updater.register(this)
     }
 
     companion object {
