@@ -71,6 +71,22 @@ elif mode == 'below':
 elif mode == 'count':
     # number of nodes of a class, e.g. icon cells in a grid
     print(sum(1 for n in ET.parse(path).iter('node') if n.get('class') == sys.argv[3]))
+elif mode == 'handle':
+    # widget resize mode: swipe from the handle on side argv[4] of the widget whose content-desc starts with
+    # argv[3], moving it by argv[5] cells (+ = right/down). Prints: from_x from_y to_x to_y
+    import re as _re
+    allnodes = list(ET.parse(path).iter('node'))
+    w = next((n for n in allnodes if (n.get('content-desc') or '').startswith(sys.argv[3])), None)
+    f = next((n for n in allnodes if (n.get('content-desc') or '').startswith('위젯 크기 조절')), None)
+    if w is not None and f is not None:
+        x1, y1, x2, y2 = map(int, re.findall(r'\d+', w.get('bounds')))
+        sx, sy = map(int, _re.findall(r'(\d+)칸', f.get('content-desc'))[:2])
+        cw, ch = (x2 - x1) / sx, (y2 - y1) / sy
+        side, k = sys.argv[4], float(sys.argv[5])
+        px, py = {'left': (x1, (y1 + y2) // 2), 'right': (x2, (y1 + y2) // 2),
+                  'top': ((x1 + x2) // 2, y1), 'bottom': ((x1 + x2) // 2, y2)}[side]
+        dx, dy = (k * cw, 0) if side in ('left', 'right') else (0, k * ch)
+        print(px, py, int(px + dx), int(py + dy))
 elif mode == 'index':
     i = int(sys.argv[3])
     if i < len(nodes):

@@ -1218,6 +1218,49 @@ fi
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 
+step "위젯 크기 조절 (길게 누르기 → 크기 조절 → 손잡이 끌기)"
+# resize_widget "<widget desc>" "<side> <cells>" ...  e.g. "right 2" "bottom -1"; leaves resize mode with Back
+resize_widget() {
+  local name="$1"; shift
+  local X=$(find_widget "$name")
+  [ -z "$X" ] && { echo "resize: no $name" >> $LOG; return 1; }
+  adb shell input swipe $X $X 1500
+  sleep 1
+  dump rmenu
+  local R=$(ui shots/rmenu.xml text "크기 조절")
+  [ -z "$R" ] && { echo "resize: no menu for $name" >> $LOG; adb shell input keyevent KEYCODE_BACK; return 1; }
+  adb shell input tap $R
+  sleep 1
+  for op in "$@"; do
+    dump rz
+    local S=$(ui shots/rz.xml handle "$name" $op)
+    echo "resize $name $op: swipe $S" >> $LOG
+    [ -n "$S" ] && adb shell input swipe $S 1200
+    sleep 1
+  done
+  dump rz
+  echo "resize frame: $(grep -o 'content-desc="위젯 크기 조절[^"]*"' shots/rz.xml)" >> $LOG
+  return 0
+}
+if resize_widget "아늑단 메모" "right 2" "bottom 2"; then
+  shot 92-resize-memo-frame
+  adb shell input keyevent KEYCODE_BACK
+  sleep 2
+  shot 93-resize-memo-big
+fi
+if resize_widget "아늑단 배터리" "bottom -1" "right -1"; then
+  shot 94-resize-battery-frame
+  adb shell input keyevent KEYCODE_BACK
+  sleep 2
+  shot 95-resize-battery-1x1
+fi
+if resize_widget "아늑단 시계" "right -2"; then
+  adb shell input keyevent KEYCODE_BACK
+  sleep 2
+  shot 96-resize-clock-2x2
+fi
+adb logcat -d | grep -E "widget resized|widget resize mode" | tail -6 >> $LOG
+
 # remove the widgets again (long-press → 위젯 삭제)
 for W in "아늑단 시계" "아늑단 배터리" "아늑단 검색창" "아늑단 메모"; do
   X=$(find_widget "$W")

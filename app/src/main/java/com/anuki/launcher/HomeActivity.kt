@@ -116,6 +116,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onPause() {
         super.onPause()
+        finishWidgetResize()
         Updater.onPaused(this)
         movingBg.onHomeVisible(false)
     }
@@ -423,6 +424,33 @@ class HomeActivity : Activity(), PagedView.Listener {
         workspace.snapToPage(spot[0])
     }
 
+    private var resizeFrame: WidgetResizeFrame? = null
+
+    /** Handles on the widget's sides to drag it bigger or smaller (see WidgetResizeFrame). */
+    private fun startWidgetResize(item: HomeItem) {
+        closePopup()
+        finishWidgetResize()
+        if (item.container != HomeItem.DESKTOP || item.screen >= workspace.pageCount) return
+        val page = workspace.page(item.screen)
+        val view = (0 until page.childCount).map { page.getChildAt(it) }.firstOrNull { it.tag === item } ?: return
+        if (workspace.currentPage != item.screen) workspace.snapToPage(item.screen, false)
+        val f = WidgetResizeFrame(this, item, view, page)
+        f.onDone = { changed ->
+            dragLayer.removeView(f)
+            if (resizeFrame === f) resizeFrame = null
+            if (changed) {
+                model.save()
+                LauncherApp.dlog("widget resized ${item.key.ifEmpty { item.provider }} -> ${item.spanX}x${item.spanY} at (${item.x},${item.y})")
+            }
+            bindAll()
+        }
+        dragLayer.addView(f, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        resizeFrame = f
+        LauncherApp.dlog("widget resize mode ${item.key.ifEmpty { item.provider }} ${item.spanX}x${item.spanY}")
+    }
+
+    private fun finishWidgetResize() { resizeFrame?.finish() }
+
     private fun updateBadges() {
         val style = prefs.badgeStyle
         fun walk(g: ViewGroup) {
@@ -589,7 +617,7 @@ class HomeActivity : Activity(), PagedView.Listener {
         val list = ArrayList<MenuEntry>()
         when {
             item?.type == HomeItem.TYPE_WIDGET -> {
-                list += MenuEntry("크기 조절") { Dialogs.widgetResize(this, item) { model.save(); bindAll() } }
+                list += MenuEntry("크기 조절") { startWidgetResize(item) }
                 list += MenuEntry("위젯 삭제") { removeItem(item) }
             }
             item?.type == HomeItem.TYPE_CAT_WIDGET -> {
@@ -603,7 +631,7 @@ class HomeActivity : Activity(), PagedView.Listener {
                         }
                     }
                 }
-                list += MenuEntry("크기 조절") { Dialogs.widgetResize(this, item) { model.save(); bindAll() } }
+                list += MenuEntry("크기 조절") { startWidgetResize(item) }
                 list += MenuEntry("위젯 삭제") { removeItem(item) }
             }
             item?.type == HomeItem.TYPE_FOLDER -> {
@@ -829,6 +857,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
+            resizeFrame != null -> finishWidgetResize()
             popup != null -> closePopup()
             folderView.visibility == View.VISIBLE -> closeFolder()
             drawer.isOpen -> closeDrawer(true)
@@ -839,7 +868,8 @@ class HomeActivity : Activity(), PagedView.Listener {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         val wasFocused = hasWindowFocus()
-        val hadOverlay = popup != null || folderView.visibility == View.VISIBLE || drawer.isOpen
+        val hadOverlay = popup != null || folderView.visibility == View.VISIBLE || drawer.isOpen || resizeFrame != null
+        finishWidgetResize()
         closePopup()
         closeFolder()
         closeDrawer(wasFocused)
