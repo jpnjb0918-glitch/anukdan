@@ -12,7 +12,10 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 
-/** One icon + label + notification badge. Used on the home screen, dock, drawer and inside folders. */
+/**
+ * One icon + label + notification badge. Used on the home screen, dock, drawer and inside folders.
+ * [row] = list style: icon on the left, name to its right (app drawer "목록").
+ */
 class IconView(ctx: Context) : View(ctx) {
     var item: HomeItem? = null
     var app: AppEntry? = null
@@ -28,6 +31,7 @@ class IconView(ctx: Context) : View(ctx) {
     var badge = 0
         set(v) { if (field != v) { field = v; invalidate() } }
     var badgeStyle = "dot"
+    var row = false
 
     var lastRawX = 0f
         private set
@@ -66,7 +70,8 @@ class IconView(ctx: Context) : View(ctx) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val wantH = (iconSize + if (showLabel) labelHeight() + dp(4f) else 0f).toInt() + dp(8f).toInt()
+        val wantH = if (row) iconSize + dp(14f).toInt()
+        else (iconSize + if (showLabel) labelHeight() + dp(4f) else 0f).toInt() + dp(8f).toInt()
         val h = when (MeasureSpec.getMode(heightMeasureSpec)) {
             MeasureSpec.EXACTLY -> MeasureSpec.getSize(heightMeasureSpec)
             MeasureSpec.AT_MOST -> minOf(wantH, MeasureSpec.getSize(heightMeasureSpec))
@@ -78,6 +83,19 @@ class IconView(ctx: Context) : View(ctx) {
     private fun labelHeight() = textPaint.fontSpacing
 
     override fun onDraw(canvas: Canvas) {
+        if (row) {
+            val top = (height - iconSize) / 2f
+            val left = dp(18f)
+            dst.set(left, top, left + iconSize, top + iconSize)
+            icon?.let { canvas.drawBitmap(it, null, dst, iconPaint) }
+            val tx = dst.right + dp(16f)
+            rowText.color = labelColor
+            if (labelShadow) rowText.setShadowLayer(dp(2f), 0f, dp(1f), 0xAA000000.toInt()) else rowText.clearShadowLayer()
+            val text = TextUtils.ellipsize(label, rowText, width - tx - dp(16f), TextUtils.TruncateAt.END).toString()
+            canvas.drawText(text, tx, height / 2f - (rowText.ascent() + rowText.descent()) / 2f, rowText)
+            drawBadge(canvas)
+            return
+        }
         val total = iconSize + if (showLabel && label.isNotEmpty()) labelHeight() + dp(4f) else 0f
         val top = ((height - total) / 2f).coerceAtLeast(0f)
         val left = (width - iconSize) / 2f
@@ -90,7 +108,15 @@ class IconView(ctx: Context) : View(ctx) {
             if (labelShadow) textPaint.setShadowLayer(dp(2f), 0f, dp(1f), 0xAA000000.toInt()) else textPaint.clearShadowLayer()
             canvas.drawText(text, width / 2f, top + iconSize + dp(4f) - textPaint.ascent(), textPaint)
         }
+        drawBadge(canvas)
+    }
 
+    private val rowText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.LEFT
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 16f, resources.displayMetrics)
+    }
+
+    private fun drawBadge(canvas: Canvas) {
         if (badge > 0 && badgeStyle != "off") {
             if (badgeStyle == "count") {
                 val r = iconSize * 0.17f

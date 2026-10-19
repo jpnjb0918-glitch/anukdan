@@ -12,6 +12,25 @@ object Hangul {
 
     private fun isChosungQuery(q: String) = q.isNotEmpty() && q.all { it in CHO || it == ' ' }
 
+    /** Section order for the "가나다" drawer: ㄱ…ㅎ, then A…Z, then # for everything else. */
+    val SECTIONS: List<String> = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ".map { it.toString() } + ('A'..'Z').map { it.toString() } + "#"
+
+    /** First-letter section of a label: a Hangul syllable gives its initial (ㄲ→ㄱ …), a Latin letter its capital. */
+    fun section(label: String): String {
+        val c = label.trim().firstOrNull() ?: return "#"
+        val cho = when (c) {
+            in '가'..'힣' -> CHO[(c - '가') / 588]
+            in 'ㄱ'..'ㅎ' -> c
+            else -> null
+        }
+        if (cho != null) {
+            return when (cho) { 'ㄲ' -> "ㄱ"; 'ㄸ' -> "ㄷ"; 'ㅃ' -> "ㅂ"; 'ㅆ' -> "ㅅ"; 'ㅉ' -> "ㅈ"; else -> cho.toString() }
+                .takeIf { it in SECTIONS } ?: "#"
+        }
+        val u = c.uppercaseChar()
+        return if (u in 'A'..'Z') u.toString() else "#"
+    }
+
     fun matches(app: AppEntry, q: String): Boolean {
         val query = q.trim().lowercase()
         if (query.isEmpty()) return true

@@ -260,6 +260,9 @@ class PageIndicator(ctx: Context) : View(ctx) {
     private val on = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
     private val off = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x77FFFFFF }
 
+    /** Dot colours (white by default, for the home screen over a wallpaper). */
+    fun setColors(current: Int, other: Int) { on.color = current; off.color = other; invalidate() }
+
     override fun onDraw(canvas: Canvas) {
         if (count <= 1) return
         val r = dpx(3.5f)

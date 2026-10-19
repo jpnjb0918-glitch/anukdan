@@ -81,13 +81,17 @@ class DragController(private val act: HomeActivity) {
         act.dragLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
         val v = i.view
-        val bmp = snapshot(v)
+        val rowIcon = (v as? IconView)?.takeIf { it.row }?.icon
+        val bmp = if (rowIcon != null) {
+            // list-style drawer row: carry just the icon, centred under the finger
+            Bitmap.createScaledBitmap(rowIcon, act.iconSize, act.iconSize, true)
+        } else snapshot(v)
         val loc = IntArray(2)
         v.getLocationOnScreen(loc)
         val rootLoc = IntArray(2)
         act.dragLayer.getLocationOnScreen(rootLoc)
-        offX = startX - loc[0]
-        offY = startY - loc[1]
+        offX = if (rowIcon != null) bmp.width / 2f else startX - loc[0]
+        offY = if (rowIcon != null) bmp.height / 2f else startY - loc[1]
         val iv = ImageView(act).apply {
             setImageBitmap(bmp)
             layoutParams = FrameLayout.LayoutParams(bmp.width, bmp.height)

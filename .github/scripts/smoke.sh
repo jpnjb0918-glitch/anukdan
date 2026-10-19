@@ -132,6 +132,67 @@ fi
 adb shell input keyevent KEYCODE_HOME
 sleep 1
 
+step "folder on the home screen (not the dock)"
+# open the drawer and drop the app with label $1 at $2 $3 on the home screen
+drag_from_drawer() {
+  adb shell input swipe 540 1500 540 400 200
+  sleep 3
+  dump drw
+  local P=$(ui shots/drw.xml find "$1")
+  echo "drawer $1=$P -> $2 $3" >> $LOG
+  [ -n "$P" ] && adb shell input draganddrop $P $2 $3 3000
+  sleep 3
+}
+# the dock already has a folder called 폴더 (row y=2203): only count one above the dock
+home_folder() { ui "$1" list | awk '$1=="폴더" && $3<2000 {print $2" "$3; exit}'; }
+dump homeF0
+T=$(ui shots/homeF0.xml find "아늑이 런처 설정")
+echo "home icon to drop on=$T" >> $LOG
+if [ -n "$T" ]; then
+  drag_from_drawer "YouTube" $T
+  dump homeF1
+  shot 08b-home-folder
+  ui shots/homeF1.xml list >> $LOG
+  F=$(home_folder shots/homeF1.xml)
+  echo "home folder after drawer drop=$F" >> $LOG
+  if [ -n "$F" ]; then
+    drag_from_drawer "Gmail" $F
+    # a home icon dropped on the folder
+    dump homeF2
+    C=$(ui shots/homeF2.xml find "Calendar")
+    F=$(home_folder shots/homeF2.xml)
+    echo "calendar=$C folder=$F" >> $LOG
+    [ -n "$C" ] && [ -n "$F" ] && adb shell input draganddrop $C $F 2500
+    sleep 3
+    dump homeF3
+    shot 08c-home-folder-4
+    ui shots/homeF3.xml list >> $LOG
+    F=$(home_folder shots/homeF3.xml)
+    if [ -n "$F" ]; then
+      adb shell input tap $F
+      sleep 2
+      shot 08d-home-folder-open
+      dump homeF4
+      echo "inside the folder:" >> $LOG
+      ui shots/homeF4.xml list >> $LOG
+      adb shell input keyevent KEYCODE_BACK
+      sleep 1
+    fi
+  fi
+fi
+cp /dev/null shots/layout-after-folder.json
+adb shell run-as com.anuki.launcher cat files/layout.json > shots/layout-after-folder.json 2>&1
+echo "== launcher restarted" >> $LOG
+adb shell am force-stop com.anuki.launcher
+adb shell am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null
+sleep 8
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+dump homeF5
+shot 08e-home-folder-after-restart
+ui shots/homeF5.xml list >> $LOG
+echo "home folder after restart=$(home_folder shots/homeF5.xml)" >> $LOG
+
 step "swipe down (notifications)"
 adb shell input swipe 540 600 540 1500 200
 sleep 2
@@ -549,6 +610,82 @@ if [ -n "$LI" ]; then
 fi
 adb shell input keyevent KEYCODE_HOME
 sleep 2
+
+step "app drawer layouts (설정 → 앱 서랍)"
+scroll_top() { for i in 1 2 3 4 5; do adb shell input swipe 540 700 540 2100 150; done; sleep 1; }
+# open settings, pick option $2 in the choice row $1, go home
+set_choice() {
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  scroll_top
+  local R=$(find_scroll "$1")
+  echo "row $1=$R" >> $LOG
+  [ -z "$R" ] && return 1
+  adb shell input tap $R
+  sleep 2
+  dump choice
+  local O=$(ui shots/choice.xml text "$2")
+  echo "option $2=$O" >> $LOG
+  [ -n "$O" ] && adb shell input tap $O
+  sleep 1
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+}
+open_drawer() { adb shell input swipe 540 1500 540 400 200; sleep 3; }
+drawer_labels() { ui "$1" list | awk '$NF > 300 && $NF < 2250' | head -${2:-8} | awk '{$NF=""; $(NF-1)=""; print}' | tr '\n' ',' ; }
+
+set_choice "서랍 형식" "가로 페이지 (좌우로 넘기기)"
+open_drawer
+shot 40-drawer-pages
+dump dpages
+echo "pages, first page: $(drawer_labels shots/dpages.xml 40)" >> $LOG
+adb shell input swipe 900 1300 150 1300 200
+sleep 2
+shot 41-drawer-pages-2
+dump dpages2
+echo "pages, second page: $(drawer_labels shots/dpages2.xml 40)" >> $LOG
+adb logcat -d | grep "drawer pages:" | tail -2 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+set_choice "서랍 형식" "목록 (아이콘 + 이름 한 줄씩)"
+open_drawer
+shot 42-drawer-list
+dump dlist
+echo "list: $(drawer_labels shots/dlist.xml 12)" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+set_choice "서랍 형식" "가나다 묶음 (첫 글자별, 오른쪽 막대로 이동)"
+open_drawer
+shot 43-drawer-sections
+dump dsec
+echo "section headings: $(grep -o 'content-desc="구역 [^"]*"' shots/dsec.xml | tr '\n' ' ')" >> $LOG
+# tap the bottom of the jump strip on the right edge
+adb shell input tap 1050 2050
+sleep 2
+shot 44-drawer-sections-jump
+dump dsec2
+echo "after jump: $(grep -o 'content-desc="구역 [^"]*"' shots/dsec2.xml | tr '\n' ' ')" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+set_choice "서랍 형식" "세로 격자 (위아래로 넘기기)"
+set_choice "정렬" "최근 설치순"
+open_drawer
+shot 45-drawer-recent
+dump drecent
+echo "recent first: $(drawer_labels shots/drecent.xml 6)" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+set_choice "정렬" "이름순"
+
+set_choice "서랍 배경" "배경화면 보이게"
+open_drawer
+shot 46-drawer-wallpaper-bg
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+set_choice "서랍 배경" "테마 색"
 
 step "settings"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG

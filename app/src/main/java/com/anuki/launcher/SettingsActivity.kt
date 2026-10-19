@@ -64,8 +64,17 @@ class SettingsActivity : Activity() {
         switch("아이콘 이름 표시", null, prefs.homeLabels) { prefs.homeLabels = it }
 
         section("앱 서랍")
+        choice("서랍 형식", listOf(
+            "grid" to "세로 격자 (위아래로 넘기기)",
+            "pages" to "가로 페이지 (좌우로 넘기기)",
+            "list" to "목록 (아이콘 + 이름 한 줄씩)",
+            "sections" to "가나다 묶음 (첫 글자별, 오른쪽 막대로 이동)",
+        ), prefs.drawerStyle) { prefs.drawerStyle = it }
+        choice("정렬", listOf("name" to "이름순", "recent" to "최근 설치순", "usage" to "많이 연 순"), prefs.drawerSort) { prefs.drawerSort = it }
+        choice("서랍 배경", listOf("solid" to "테마 색", "glass" to "반투명", "wallpaper" to "배경화면 보이게"), prefs.drawerBg) { prefs.drawerBg = it }
         seek("열 수", 3, 7, prefs.drawerCols, { "${it}칸" }) { prefs.drawerCols = it }
-        switch("아이콘 이름 표시", null, prefs.drawerLabels) { prefs.drawerLabels = it }
+        switch("아이콘 이름 표시", "목록 형식에서는 항상 이름이 보여요", prefs.drawerLabels) { prefs.drawerLabels = it }
+        note("'가나다 묶음'은 항상 이름순이에요. '많이 연 순'은 아늑이 런처에서 앱을 연 횟수로 정해져요(이번 버전부터 세기 시작해요).")
         action("탭 관리", "${prefs.tabs().size}개 · 탭마다 앱을 골라 묶어요") { Dialogs.editTabs(this) { build() } }
         action("숨긴 앱", "${prefs.hidden.size}개 · 검색하면 숨긴 앱도 나와요") { Dialogs.hiddenApps(this) { build() } }
 

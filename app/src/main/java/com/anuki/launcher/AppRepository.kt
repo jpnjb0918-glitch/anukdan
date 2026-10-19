@@ -21,6 +21,7 @@ class AppEntry(val info: LauncherActivityInfo, val label: String, val serial: Lo
     val chosung: String = Hangul.chosung(label)
     val isSystem: Boolean = (info.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
     val isGame: Boolean = info.applicationInfo.category == ApplicationInfo.CATEGORY_GAME
+    val installTime: Long = try { info.firstInstallTime } catch (_: Exception) { 0L }
 
     companion object {
         fun keyOf(c: ComponentName, serial: Long) = c.flattenToShortString() + "#" + serial

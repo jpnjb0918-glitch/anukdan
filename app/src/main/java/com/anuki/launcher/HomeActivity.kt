@@ -390,6 +390,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             val bounds = Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)
             val opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.width, v.height).toBundle()
             apps.launcherApps.startMainActivity(app.component, app.user, bounds, opts)
+            prefs.countLaunch(app.key)
         } catch (_: Exception) {
             toast("앱을 열 수 없어요")
         }

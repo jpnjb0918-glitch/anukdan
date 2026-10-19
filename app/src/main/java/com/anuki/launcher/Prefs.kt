@@ -10,6 +10,8 @@ import kotlin.reflect.KProperty
 /** All launcher settings. Every write bumps [version] so the home screen knows to rebind. */
 class Prefs(ctx: Context) {
     val sp: SharedPreferences = ctx.getSharedPreferences("anuki", Context.MODE_PRIVATE)
+    /** How often each app was opened from this launcher (for the "most used" drawer order). Not a setting, so no bump. */
+    private val usage: SharedPreferences = ctx.getSharedPreferences("anuki_usage", Context.MODE_PRIVATE)
 
     private fun intPref(key: String, def: Int) = object : ReadWriteProperty<Any?, Int> {
         override fun getValue(thisRef: Any?, property: KProperty<*>): Int = sp.getInt(key, def)
@@ -42,6 +44,12 @@ class Prefs(ctx: Context) {
     // drawer
     var drawerCols by intPref("drawer_cols", 5)
     var drawerLabels by boolPref("drawer_labels", true)
+    var drawerStyle by strPref("drawer_style", "grid")  // grid | pages | list | sections
+    var drawerSort by strPref("drawer_sort", "name")    // name | recent | usage
+    var drawerBg by strPref("drawer_bg", "solid")       // solid | glass | wallpaper
+
+    fun launchCount(key: String): Int = usage.getInt(key, 0)
+    fun countLaunch(key: String) { usage.edit().putInt(key, launchCount(key) + 1).apply() }
 
     // look
     var iconScale by intPref("icon_scale", 100)

@@ -236,17 +236,166 @@ class FolderView(private val act: HomeActivity) : FrameLayout(act) {
 }
 
 /** Full-screen app drawer: search (with 초성), tabs, alphabetical grid. Swipe down at the top to close. */
+/** Horizontal pages for the "가로 페이지" drawer: swipe left/right, snaps to a page. */
+class DrawerPager(ctx: Context) : ViewGroup(ctx) {
+    var onPageChanged: ((Int) -> Unit)? = null
+    var currentPage = 0
+        private set
+    private val scroller = android.widget.Scroller(ctx)
+    private var velocity: android.view.VelocityTracker? = null
+    private val cfg = ViewConfiguration.get(ctx)
+    private var downX = 0f
+    private var downY = 0f
+    private var lastX = 0f
+    private var horizontal = false
+
+    val pageCount: Int get() = childCount
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = MeasureSpec.getSize(heightMeasureSpec)
+        setMeasuredDimension(w, h)
+        for (i in 0 until childCount) {
+            getChildAt(i).measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+        }
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val w = r - l
+        for (i in 0 until childCount) getChildAt(i).layout(i * w, 0, (i + 1) * w, b - t)
+        if (scroller.isFinished) scrollTo(currentPage * w, 0)
+    }
+
+    override fun computeScroll() {
+        if (scroller.computeScrollOffset()) { scrollTo(scroller.currX, 0); postInvalidateOnAnimation() }
+    }
+
+    fun snapTo(p: Int, animate: Boolean = true) {
+        val target = p.coerceIn(0, maxOf(0, pageCount - 1))
+        if (!scroller.isFinished) scroller.abortAnimation()
+        val dx = target * width - scrollX
+        if (animate && width > 0) scroller.startScroll(scrollX, 0, dx, 0, 260) else scrollTo(target * width, 0)
+        if (target != currentPage) { currentPage = target; onPageChanged?.invoke(target) }
+        invalidate()
+    }
+
+    private fun track(ev: MotionEvent) {
+        (velocity ?: android.view.VelocityTracker.obtain().also { velocity = it }).addMovement(ev)
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = ev.x; downY = ev.y; lastX = ev.x; horizontal = false
+                velocity?.clear(); track(ev)
+                if (!scroller.isFinished) { scroller.abortAnimation(); horizontal = true; return true }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                track(ev)
+                val dx = ev.x - downX; val dy = ev.y - downY
+                if (abs(dx) > cfg.scaledTouchSlop && abs(dx) > abs(dy)) { horizontal = true; lastX = ev.x; return true }
+            }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        track(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { downX = ev.x; lastX = ev.x; if (!scroller.isFinished) scroller.abortAnimation() }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = lastX - ev.x
+                lastX = ev.x
+                val nx = (scrollX + dx).coerceIn(-width * 0.2f, (pageCount - 1) * width + width * 0.2f)
+                scrollTo(nx.toInt(), 0)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val v = velocity
+                v?.computeCurrentVelocity(1000)
+                val vx = v?.xVelocity ?: 0f
+                val fling = cfg.scaledMinimumFlingVelocity * 4
+                val target = when {
+                    ev.actionMasked == MotionEvent.ACTION_UP && vx > fling -> currentPage - 1
+                    ev.actionMasked == MotionEvent.ACTION_UP && vx < -fling -> currentPage + 1
+                    else -> Math.round(scrollX.toFloat() / maxOf(1, width))
+                }
+                snapTo(target)
+                velocity?.recycle(); velocity = null
+            }
+        }
+        return true
+    }
+}
+
+/** ㄱ…ㅎ A…Z # strip on the right of the "가나다" drawer: touch or slide to jump to a section. */
+class SectionIndexBar(ctx: Context) : View(ctx) {
+    var keys: List<String> = emptyList()
+        set(v) { field = v; invalidate() }
+    var onPick: ((String) -> Unit)? = null
+    var color = Color.DKGRAY
+        set(v) { field = v; paint.color = v; invalidate() }
+    private val paint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+        isFakeBoldText = true
+    }
+    private var last: String? = null
+
+    private fun step() = if (keys.isEmpty()) 0f else minOf(height.toFloat() / keys.size, resources.displayMetrics.density * 22f)
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        if (keys.isEmpty()) return
+        val st = step()
+        paint.textSize = minOf(st * 0.72f, android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics))
+        val top = (height - st * keys.size) / 2f
+        for ((i, k) in keys.withIndex()) {
+            val cy = top + st * i + st / 2f
+            canvas.drawText(k, width / 2f, cy - (paint.ascent() + paint.descent()) / 2f, paint)
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (keys.isEmpty()) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                val st = step()
+                val top = (height - st * keys.size) / 2f
+                val i = ((event.y - top) / st).toInt().coerceIn(0, keys.size - 1)
+                val k = keys[i]
+                if (k != last) { last = k; onPick?.invoke(k); performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> last = null
+        }
+        return true
+    }
+}
+
+/**
+ * App drawer. Four layouts (설정 → 앱 서랍 → 서랍 형식):
+ *  grid     세로 격자: one long grid, scroll up/down
+ *  pages    가로 페이지: grid pages, swipe left/right, dots underneath
+ *  list     목록: one app per row, icon + name
+ *  sections 가나다 묶음: grid under ㄱ/ㄴ/…/A/B/# headings, with a jump strip on the right
+ * plus order (이름순 / 최근 설치순 / 많이 연 순) and background (테마 색 / 반투명 / 배경화면 보이게).
+ */
 class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     private val column = LinearLayout(act)
     val search = EditText(act)
     private val tabsRow = LinearLayout(act)
     private val tabsScroll = HorizontalScrollView(act)
+    private val body = FrameLayout(act)
     private val scroll = ScrollView(act)
+    private val stack = LinearLayout(act)
     private val grid = IconGrid(act)
+    private val pager = DrawerPager(act)
+    private val dots = PageIndicator(act)
+    private val indexBar = SectionIndexBar(act)
+    private val headers = HashMap<String, View>()
     private var tabIndex = 0
     private var downX = 0f
     private var downY = 0f
     private var dragging = false
+    private var bottomInset = 0
     private val slop = ViewConfiguration.get(act).scaledTouchSlop
 
     init {
@@ -266,7 +415,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             })
             setOnEditorActionListener { _, id, ev ->
                 val enter = id == EditorInfo.IME_ACTION_GO || (ev != null && ev.keyCode == KeyEvent.KEYCODE_ENTER)
-                if (enter) { filtered().firstOrNull()?.let { act.launch(it, this) }; true } else false
+                if (enter) { ordered().firstOrNull()?.let { act.launch(it, this) }; true } else false
             }
         }
         column.addView(search, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
@@ -277,24 +426,50 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         tabsRow.setPadding(act.dp(12f), 0, act.dp(12f), 0)
         tabsScroll.addView(tabsRow)
         column.addView(tabsScroll, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+
         scroll.isVerticalScrollBarEnabled = false
         scroll.clipToPadding = false
-        grid.setPadding(act.dp(8f), act.dp(8f), act.dp(8f), act.dp(24f))
-        scroll.addView(grid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        column.addView(scroll, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        stack.orientation = LinearLayout.VERTICAL
+        stack.setPadding(act.dp(8f), act.dp(8f), act.dp(8f), act.dp(24f))
+        scroll.addView(stack, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        body.addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        body.addView(pager, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        body.addView(dots, LayoutParams(LayoutParams.MATCH_PARENT, act.dp(22f), Gravity.BOTTOM))
+        body.addView(indexBar, LayoutParams(act.dp(26f), LayoutParams.MATCH_PARENT, Gravity.END))
+        pager.onPageChanged = { dots.current = it }
+        indexBar.onPick = { k -> headers[k]?.let { scroll.smoothScrollTo(0, it.top) } }
+        column.addView(body, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(column, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
     fun setInsets(top: Int, bottom: Int) {
         column.setPadding(0, top, 0, 0)
+        bottomInset = bottom
         scroll.setPadding(0, 0, 0, bottom)
+        (dots.layoutParams as LayoutParams).bottomMargin = bottom
+        pager.setPadding(0, 0, 0, bottom + act.dp(22f))
+        indexBar.setPadding(0, 0, 0, bottom)
     }
 
+    /** Labels and controls are white over the wallpaper background, theme coloured otherwise. */
+    private val onPanel: Boolean get() = act.prefs.drawerBg != "wallpaper"
+    private fun textColor() = if (onPanel) Palette.text(act) else Color.WHITE
+    private fun subtleColor() = if (onPanel) Palette.subtle(act) else 0x33FFFFFF
+
     fun applyTheme() {
-        setBackgroundColor(Palette.panel(act))
-        search.setTextColor(Palette.text(act))
-        search.setHintTextColor((Palette.text(act) and 0x00FFFFFF) or 0x88000000.toInt())
-        search.background = Palette.rounded(Palette.subtle(act), act.dp(24f).toFloat())
+        setBackgroundColor(
+            when (act.prefs.drawerBg) {
+                "glass" -> (Palette.panel(act) and 0x00FFFFFF) or 0xB8000000.toInt()
+                "wallpaper" -> 0x59000000
+                else -> Palette.panel(act)
+            }
+        )
+        search.setTextColor(textColor())
+        search.setHintTextColor((textColor() and 0x00FFFFFF) or 0x88000000.toInt())
+        search.background = Palette.rounded(subtleColor(), act.dp(24f).toFloat())
+        if (onPanel) dots.setColors(Palette.TEAL, (Palette.text(act) and 0x00FFFFFF) or 0x40000000)
+        else dots.setColors(Color.WHITE, 0x77FFFFFF)
+        indexBar.color = if (onPanel) Palette.TEAL else Color.WHITE
         buildTabs()
     }
 
@@ -310,8 +485,8 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
                 textSize = 14f
                 setPadding(act.dp(14f), act.dp(7f), act.dp(14f), act.dp(7f))
                 val selected = !isAdd && i == tabIndex
-                setTextColor(if (selected) Color.WHITE else Palette.text(act))
-                background = Palette.rounded(if (selected) Palette.TEAL else Palette.subtle(act), act.dp(16f).toFloat())
+                setTextColor(if (selected) Color.WHITE else textColor())
+                background = Palette.rounded(if (selected) Palette.TEAL else subtleColor(), act.dp(16f).toFloat())
                 setOnClickListener {
                     if (isAdd) Dialogs.editTabs(act) { applyTheme(); refresh() }
                     else { tabIndex = i; buildTabs(); refresh() }
@@ -334,23 +509,113 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         }
     }
 
+    /** [filtered] in the chosen order; apps.all is already sorted by name (Korean collation). */
+    fun ordered(): List<AppEntry> {
+        val list = filtered()
+        if (act.prefs.drawerStyle == "sections") return list
+        return when (act.prefs.drawerSort) {
+            "recent" -> list.sortedByDescending { it.installTime }
+            "usage" -> list.sortedByDescending { act.prefs.launchCount(it.key) } // stable: ties stay in name order
+            else -> list
+        }
+    }
+
+    private fun rowHeight() = act.iconSize + if (act.prefs.drawerLabels) act.dp(36f) else act.dp(18f)
+
+    private fun bind(v: IconView, app: AppEntry, row: Boolean) {
+        act.bindAppIcon(v, app, null, DragInfo.SRC_DRAWER, act.prefs.drawerLabels || row, onPanel = onPanel)
+        v.row = row
+        if (row) {
+            v.iconSize = (act.iconSize * 0.78f).toInt()
+            v.showLabel = true
+        }
+    }
+
+    private fun newIcon(app: AppEntry, row: Boolean) = IconView(act).also { bind(it, app, row) }
+
+    private fun newGrid(cols: Int, rowH: Int) = IconGrid(act).apply { this.cols = cols; rowHeight = rowH }
+
     fun refresh() {
         if (visibility != VISIBLE) return
-        val list = filtered()
-        grid.cols = act.prefs.drawerCols
-        val labels = act.prefs.drawerLabels
-        grid.rowHeight = act.iconSize + if (labels) act.dp(36f) else act.dp(18f)
-        // reuse existing views where possible
+        val list = ordered()
+        val searching = search.text.isNotBlank()
+        var style = act.prefs.drawerStyle
+        if (searching && style == "sections") style = "grid"
+        val paged = style == "pages"
+        scroll.visibility = if (paged) GONE else VISIBLE
+        pager.visibility = if (paged) VISIBLE else GONE
+        dots.visibility = if (paged) VISIBLE else GONE
+        indexBar.visibility = if (style == "sections") VISIBLE else GONE
+        headers.clear()
+        when (style) {
+            "pages" -> fillPages(list)
+            "sections" -> fillSections(list)
+            "list" -> fillGrid(list, cols = 1, rowH = (act.iconSize * 0.78f).toInt() + act.dp(14f), row = true)
+            else -> fillGrid(list, cols = act.prefs.drawerCols, rowH = rowHeight(), row = false)
+        }
+    }
+
+    /** One grid in the scroll view, reusing icon views where possible (search updates on every key). */
+    private fun fillGrid(list: List<AppEntry>, cols: Int, rowH: Int, row: Boolean) {
+        if (stack.childCount != 1 || stack.getChildAt(0) !== grid) {
+            stack.removeAllViews()
+            (grid.parent as? ViewGroup)?.removeView(grid)
+            stack.addView(grid, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+        stack.setPadding(if (row) 0 else act.dp(8f), act.dp(8f), if (row) 0 else act.dp(8f), act.dp(24f))
+        grid.cols = cols
+        grid.rowHeight = rowH
         while (grid.childCount > list.size) grid.removeViewAt(grid.childCount - 1)
         for ((i, app) in list.withIndex()) {
-            if (i < grid.childCount) {
-                val v = grid.getChildAt(i) as IconView
-                act.bindAppIcon(v, app, null, DragInfo.SRC_DRAWER, labels, onPanel = true)
-            } else {
-                grid.addView(act.makeAppIcon(app, null, DragInfo.SRC_DRAWER, labels, onPanel = true))
-            }
+            if (i < grid.childCount) bind(grid.getChildAt(i) as IconView, app, row)
+            else grid.addView(newIcon(app, row))
         }
         grid.requestLayout()
+    }
+
+    private fun fillSections(list: List<AppEntry>) {
+        stack.removeAllViews()
+        (grid.parent as? ViewGroup)?.removeView(grid)
+        stack.setPadding(act.dp(8f), act.dp(4f), act.dp(30f), act.dp(24f))
+        val groups = list.groupBy { Hangul.section(it.label) }
+        val keys = Hangul.SECTIONS.filter { it in groups }
+        for (k in keys) {
+            val h = TextView(act).apply {
+                text = k
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(if (onPanel) Palette.TEAL else Color.WHITE)
+                setPadding(act.dp(12f), act.dp(12f), act.dp(12f), act.dp(2f))
+                contentDescription = "구역 $k"
+            }
+            headers[k] = h
+            stack.addView(h, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            val g = newGrid(act.prefs.drawerCols, rowHeight())
+            for (app in groups.getValue(k)) g.addView(newIcon(app, false))
+            stack.addView(g, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+        indexBar.keys = keys
+    }
+
+    private fun fillPages(list: List<AppEntry>) {
+        val avail = pager.height - pager.paddingBottom
+        if (avail <= 0) { post { refresh() }; return }
+        val cols = act.prefs.drawerCols
+        val rowH = rowHeight()
+        val rows = maxOf(1, (avail - act.dp(8f)) / rowH)
+        val per = cols * rows
+        val keep = pager.currentPage
+        pager.removeAllViews()
+        for (start in list.indices step per) {
+            val g = newGrid(cols, rowH).apply { setPadding(act.dp(8f), act.dp(8f), act.dp(8f), 0) }
+            for (app in list.subList(start, minOf(list.size, start + per))) g.addView(newIcon(app, false))
+            pager.addView(g)
+        }
+        if (pager.childCount == 0) pager.addView(newGrid(cols, rowH))
+        dots.count = pager.childCount
+        pager.snapTo(if (search.text.isNotBlank()) 0 else keep.coerceAtMost(pager.childCount - 1), false)
+        dots.current = pager.currentPage
+        LauncherApp.dlog("drawer pages: ${pager.childCount} x $per")
     }
 
     val isOpen: Boolean get() = visibility == VISIBLE
@@ -361,6 +626,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         visibility = VISIBLE
         refresh()
         scroll.scrollTo(0, 0)
+        if (pager.pageCount > 0) pager.snapTo(0, false)
         translationY = height.toFloat().takeIf { it > 0 } ?: act.resources.displayMetrics.heightPixels.toFloat()
         animate().translationY(0f).setDuration(220).withEndAction {
             if (focusSearch) {
@@ -382,13 +648,14 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         if (animate) animate().translationY(height.toFloat()).setDuration(200).withEndAction(end).start() else end.run()
     }
 
-    // swipe down from the top of the list closes the drawer
+    // swipe down from the top of the list (or anywhere on the paged drawer) closes the drawer
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> { downX = ev.rawX; downY = ev.rawY; dragging = false }
             MotionEvent.ACTION_MOVE -> {
                 val dy = ev.rawY - downY
-                if (!dragging && scroll.scrollY == 0 && dy > slop * 2 && dy > abs(ev.rawX - downX) * 1.5f) {
+                val atTop = pager.visibility == VISIBLE || scroll.scrollY == 0
+                if (!dragging && atTop && dy > slop * 2 && dy > abs(ev.rawX - downX) * 1.5f) {
                     dragging = true
                     return true
                 }
