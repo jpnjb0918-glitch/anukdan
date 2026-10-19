@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- new-version check (GitHub releases) and downloading the update -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".LauncherApp"
@@ -129,5 +131,18 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+        <!-- the moving background as the phone's wallpaper (home + lock screen) -->
+        <service
+            android:name=".AnukiWallpaperService"
+            android:exported="true"
+            android:label="@string/wallpaper_name"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/anuki_wallpaper" />
+        </service>
     </application>
 </manifest>

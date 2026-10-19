@@ -634,30 +634,31 @@ set_choice() {
 open_drawer() { adb shell input swipe 540 1500 540 400 200; sleep 3; }
 drawer_labels() { ui "$1" list | awk '$NF > 300 && $NF < 2250' | head -${2:-8} | awk '{$NF=""; $(NF-1)=""; print}' | tr '\n' ',' ; }
 
-# set the drawer's 열 수 slider: $1 = fraction along the bar (0 = 3 columns, 0.5 = 5 columns)
-set_drawer_cols() {
+# move the settings slider under the row titled $1 to fraction $2 of its length (0 = minimum, 1 = maximum)
+set_slider() {
   adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
   sleep 2
   scroll_top
-  local T=$(find_scroll "열 수")
-  echo "열 수 row=$T" >> $LOG
+  local T=$(find_scroll "$1")
+  echo "slider row $1=$T" >> $LOG
   [ -z "$T" ] && return 1
-  set -- "$1" $T
-  local B=$(ui shots/fs.xml below android.widget.SeekBar "$3")
+  local f="$2"
+  set -- $T
+  local B=$(ui shots/fs.xml below android.widget.SeekBar "$2")
   echo "slider=$B" >> $LOG
   [ -z "$B" ] && return 1
-  set -- "$1" $B
-  local x=$(python3 -c "print(int($2 + 30 + ($4 - $2 - 60) * $1))")
-  adb shell input tap $x $(( ($3 + $5) / 2 ))
+  set -- $B
+  local x=$(python3 -c "print(int($1 + 30 + ($3 - $1 - 60) * $f))")
+  adb shell input tap $x $(( ($2 + $4) / 2 ))
   sleep 1
-  dump colsdone
-  grep -o 'text="[0-9]칸"' shots/colsdone.xml | tr '\n' ' ' >> $LOG; echo >> $LOG
   adb shell input keyevent KEYCODE_HOME
   sleep 2
 }
 
 set_choice "서랍 형식" "가로 페이지 (좌우로 넘기기)"
-set_drawer_cols 0
+# fewer, bigger cells so the 21 test apps need more than one page
+set_slider "열 수" 0
+set_slider "아이콘 크기" 1
 open_drawer
 shot 40-drawer-pages
 dump dpages
@@ -670,7 +671,8 @@ echo "pages, second page: $(drawer_labels shots/dpages2.xml 40)" >> $LOG
 adb logcat -d | grep "drawer pages:" | tail -2 >> $LOG
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-set_drawer_cols 0.5
+set_slider "열 수" 0.5
+set_slider "아이콘 크기" 0.5
 
 set_choice "서랍 형식" "목록 (아이콘 + 이름 한 줄씩)"
 open_drawer
@@ -710,6 +712,122 @@ shot 46-drawer-wallpaper-bg
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 set_choice "서랍 배경" "테마 색"
+
+step "icon colours"
+open_settings_row() {
+  adb shell am start -W -n com.anuki.launcher/.SettingsActivity >/dev/null
+  sleep 2
+  scroll_top
+  local R=$(find_scroll "$1")
+  echo "row $1=$R" >> $LOG
+  [ -z "$R" ] && return 1
+  adb shell input tap $R
+  sleep 2
+  return 0
+}
+if open_settings_row "아이콘 색"; then
+  dump colord
+  P=$(ui shots/colord.xml anydesc "아이콘 색: 핑크")
+  echo "pink=$P" >> $LOG
+  [ -n "$P" ] && adb shell input tap $P
+  sleep 1
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  shot 60-color-pink-home
+  open_drawer
+  shot 61-color-pink-drawer
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+fi
+if open_icon_picker "Settings"; then
+  C=$(ui shots/picker.xml find "아이콘 선택: 색 바꾸기")
+  echo "colour cell=$C" >> $LOG
+  if [ -n "$C" ]; then
+    adb shell input tap $C
+    sleep 2
+    dump appcolor
+    G=$(ui shots/appcolor.xml anydesc "아이콘 색: 초록")
+    echo "green=$G" >> $LOG
+    [ -n "$G" ] && adb shell input tap $G
+    sleep 2
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  shot 62-color-app-green
+fi
+if open_settings_row "아이콘 색"; then
+  dump colord2
+  D=$(ui shots/colord2.xml text "직접 고르기")
+  echo "custom button=$D" >> $LOG
+  if [ -n "$D" ]; then
+    adb shell input tap $D
+    sleep 2
+    dump custom
+    H=$(ui shots/custom.xml below android.widget.SeekBar 0)
+    echo "hue slider=$H" >> $LOG
+    if [ -n "$H" ]; then
+      set -- $H
+      adb shell input tap $(( $1 + ($3 - $1) * 78 / 100 )) $(( ($2 + $4) / 2 ))
+      sleep 1
+    fi
+    shot 63-color-custom-dialog
+    OK=$(ui shots/custom.xml text "확인")
+    [ -n "$OK" ] && adb shell input tap $OK
+    sleep 1
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  shot 64-color-custom-home
+fi
+if open_settings_row "아이콘 색"; then
+  dump colord3
+  grep -o 'text="아이콘 색[^"]*"' shots/fs.xml | head -1 >> $LOG
+  B=$(ui shots/colord3.xml anydesc "아이콘 색: 기본 (청록)")
+  [ -n "$B" ] && adb shell input tap $B
+  sleep 1
+fi
+if open_icon_picker "Settings"; then
+  C=$(ui shots/picker.xml find "아이콘 선택: 색 바꾸기")
+  [ -n "$C" ] && adb shell input tap $C && sleep 2 && dump appcolor2
+  F=$(ui shots/appcolor2.xml anydesc "아이콘 색: 전체 색 따르기")
+  [ -n "$F" ] && adb shell input tap $F
+  sleep 1
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+step "new version check (설정 → 업데이트 확인)"
+# the test build's version is the test run number, older than the newest release, so a new version is offered
+for edition in 배지판 기본판; do
+  if open_settings_row "업데이트 확인"; then
+    sleep 6
+    dump upd
+    grep -o 'text="[^"]*"' shots/upd.xml | grep -E "새 버전|지금 버전|최신" | head -3 | tr '\n' ' ' >> $LOG; echo >> $LOG
+    Y=$(ui shots/upd.xml text "예")
+    if [ -n "$Y" ]; then
+      [ "$edition" = "배지판" ] && shot 70-update-ask
+      adb shell input tap $Y
+      sleep 2
+      dump updc
+      [ "$edition" = "배지판" ] && shot 71-update-choose
+      E=$(ui shots/updc.xml textprefix "$edition")
+      echo "edition $edition=$E" >> $LOG
+      [ -n "$E" ] && adb shell input tap $E
+      sleep 3
+      dump updd
+      if [ "$edition" = "배지판" ]; then shot 72-update-badge-howto; else shot 73-update-standard; fi
+      grep -o 'text="[^"]*"' shots/updd.xml | head -2 | cut -c1-80 | tr '\n' ' ' >> $LOG; echo >> $LOG
+      OK=$(ui shots/updd.xml text "확인")
+      [ -n "$OK" ] && adb shell input tap $OK
+      sleep 1
+    fi
+  fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+done
+sleep 25
+echo "downloaded: $(adb shell ls -la /sdcard/Download/ 2>/dev/null | grep anuki-launcher | tr '\n' ' ')" >> $LOG
+adb logcat -d | grep -E "update" | grep Anuki | tail -6 >> $LOG
 
 step "settings"
 adb shell am start -W -n com.anuki.launcher/.SettingsActivity | tee -a $LOG
@@ -787,6 +905,49 @@ for kind in mp4 gif; do
     shot 52-moving-$kind-b
   fi
 done
+step "moving background as the phone wallpaper (home + lock screen)"
+if open_wallpaper_dialog; then
+  O=$(ui shots/wpd.xml text "휴대폰 배경화면으로 설정 (잠금 화면 포함)")
+  echo "system wallpaper option=$O" >> $LOG
+  if [ -n "$O" ]; then
+    adb shell input tap $O
+    sleep 5
+    shot 54-live-preview
+    dump livep
+    grep -o 'text="[^"]*"' shots/livep.xml | head -20 | tr '\n' ' ' >> $LOG; echo >> $LOG
+    for t in "Set wallpaper" "SET WALLPAPER" "Set Wallpaper" "배경화면 설정" "Apply"; do
+      B=$(ui shots/livep.xml text "$t")
+      if [ -n "$B" ]; then echo "set button=$t $B" >> $LOG; adb shell input tap $B; break; fi
+    done
+    sleep 3
+    dump liveopt
+    shot 55-live-options
+    grep -o 'text="[^"]*"' shots/liveopt.xml | head -20 | tr '\n' ' ' >> $LOG; echo >> $LOG
+    for t in "Home and lock screens" "Home screen and lock screen" "Home & lock screens" "Home and lock screen" "홈 화면 및 잠금 화면"; do
+      B=$(ui shots/liveopt.xml text "$t")
+      if [ -n "$B" ]; then echo "where=$t $B" >> $LOG; adb shell input tap $B; break; fi
+    done
+    sleep 5
+  fi
+  adb shell dumpsys wallpaper | grep -iE "AnukiWallpaperService|mWallpaperComponent|component=" | head -6 >> $LOG
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  shot 56-live-home
+  # lock screen: screen off and on again
+  adb shell input keyevent KEYCODE_SLEEP
+  sleep 2
+  adb shell input keyevent KEYCODE_WAKEUP
+  sleep 3
+  shot 57-lock-a
+  sleep 1
+  shot 57-lock-b
+  adb shell wm dismiss-keyguard
+  adb shell input swipe 540 1900 540 600 200
+  sleep 2
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb logcat -d | grep -E "system wallpaper" | tail -5 >> $LOG
+fi
 if open_wallpaper_dialog; then
   O=$(ui shots/wpd.xml text "움직이는 배경 끄기")
   [ -n "$O" ] && adb shell input tap $O

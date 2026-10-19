@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 아늑이 런처의 움직이는 배경을 휴대폰 배경화면(홈·잠금 화면)으로 -->
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:thumbnail="@mipmap/ic_launcher"
+    android:description="@string/wallpaper_desc" />

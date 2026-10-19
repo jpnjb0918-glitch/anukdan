@@ -146,7 +146,8 @@ object LineIcons {
     }
 
     /** Draws the glyph in the 48-unit box [left, top, left + side, top + side]: paper fills, then ink. */
-    fun drawGlyph(c: Canvas, els: List<Element>, left: Float, top: Float, side: Float) {
+    fun drawGlyph(c: Canvas, els: List<Element>, left: Float, top: Float, side: Float, color: Int = IconColors.DEFAULT) {
+        val paper = intArrayOf(PAPER[0], IconColors.map(PAPER[1], color))
         c.save()
         c.translate(left, top)
         c.scale(side / 48f, side / 48f)
@@ -154,7 +155,7 @@ object LineIcons {
         p.style = Paint.Style.FILL
         for (e in els) {
             if (e.paper < 0) continue
-            p.color = PAPER[e.paper % 2]
+            p.color = paper[e.paper % 2]
             c.drawPath(e.path, p)
         }
         p.color = INK
@@ -174,21 +175,25 @@ object LineIcons {
         c.restore()
     }
 
-    private fun frame(ctx: Context, name: String): Bitmap? = synchronized(frames) {
-        frames.getOrPut(name) {
-            try { ctx.assets.open("catfmt/$name.png").use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
-        }
+    private fun frame(ctx: Context, name: String, color: Int = IconColors.DEFAULT): Bitmap? {
+        val raw = synchronized(frames) {
+            frames.getOrPut(name) {
+                try { ctx.assets.open("catfmt/$name.png").use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+            }
+        } ?: return null
+        return IconColors.recolor(raw, color, "frame:$name")
     }
 
     fun tileFor(key: String) = TILES[Math.floorMod(key.hashCode(), TILES.size)]
 
-    /** Cat frame (peeking cat, tile, paws) around whatever [inside] draws in the glyph box. */
-    private fun framed(ctx: Context, size: Int, tileKey: String, inside: (Canvas, RectF) -> Unit): Bitmap {
+    /** Cat frame (peeking cat, tile, paws) around whatever [inside] draws in the glyph box. A [color] makes every tile that colour. */
+    private fun framed(ctx: Context, size: Int, tileKey: String, color: Int, inside: (Canvas, RectF) -> Unit): Bitmap {
         val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         val dst = RectF(0f, 0f, size.toFloat(), size.toFloat())
         val bmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        frame(ctx, "back_" + tileFor(tileKey))?.let { c.drawBitmap(it, null, dst, bmp) }
+        val tile = if (color == IconColors.DEFAULT) tileFor(tileKey) else "cyan"
+        frame(ctx, "back_$tile", color)?.let { c.drawBitmap(it, null, dst, bmp) }
         val k = size / 512f
         val side = BOX_SIDE * k
         inside(c, RectF(size / 2f - side / 2, BOX_CY * k - side / 2, size / 2f + side / 2, BOX_CY * k + side / 2))
@@ -197,14 +202,14 @@ object LineIcons {
     }
 
     /** Generated cat icon for the named drawing; [tileKey] picks the tile colour (package or icon name). */
-    fun render(ctx: Context, name: String, size: Int, tileKey: String = name): Bitmap? {
+    fun render(ctx: Context, name: String, size: Int, tileKey: String = name, color: Int = IconColors.DEFAULT): Bitmap? {
         val els = glyph(ctx, name) ?: return null
-        return framed(ctx, size, tileKey) { c, box -> drawGlyph(c, els, box.left, box.top, box.width()) }
+        return framed(ctx, size, tileKey, color) { c, box -> drawGlyph(c, els, box.left, box.top, box.width(), color) }
     }
 
     /** An app's own icon in the same cat frame, for apps with no drawing in the set. */
-    fun renderOriginal(ctx: Context, d: Drawable, size: Int, tileKey: String): Bitmap =
-        framed(ctx, size, tileKey) { c, box ->
+    fun renderOriginal(ctx: Context, d: Drawable, size: Int, tileKey: String, color: Int = IconColors.DEFAULT): Bitmap =
+        framed(ctx, size, tileKey, color) { c, box ->
             val inset = box.width() * 0.04f
             d.setBounds((box.left + inset).toInt(), (box.top + inset).toInt(), (box.right - inset).toInt(), (box.bottom - inset).toInt())
             d.draw(c)

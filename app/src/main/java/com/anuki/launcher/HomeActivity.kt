@@ -121,8 +121,9 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onResume() {
         super.onResume()
-        movingBg.apply(prefs.movingBg)
+        movingBg.apply(MovingWallpaper.launcherValue(this))
         movingBg.onHomeVisible(true)
+        Updater.maybeCheck(this)
         if (apps.loaded && prefs.version != boundVersion) {
             icons.invalidate()
             bindAll()
@@ -257,7 +258,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     private fun bindAll() {
-        movingBg.apply(prefs.movingBg)
+        movingBg.apply(MovingWallpaper.launcherValue(this))
         if (!apps.loaded) return
         if (!prefs.firstRunDone && model.items.isEmpty()) populateDefaults()
         boundVersion = prefs.version

@@ -103,6 +103,10 @@ object MovingWallpaper {
         LauncherApp.dlog("moving bg -> ${value.ifEmpty { "off" }}")
     }
 
+    /** What the launcher itself should draw: nothing while the phone's wallpaper is already our moving one. */
+    fun launcherValue(ctx: Context): String =
+        if (AnukiWallpaperService.isActive(ctx)) "" else LauncherApp.instance.prefs.movingBg
+
     /** Builds the view that draws [value] (null when off or the file is gone). */
     fun createView(ctx: Context, value: String): Layer? = when {
         value == PATTERN -> PatternLayer(ctx)

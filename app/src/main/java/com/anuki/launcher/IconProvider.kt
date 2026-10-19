@@ -43,6 +43,15 @@ class IconProvider(private val ctx: Context) {
         }
     }
 
+    /** Icon colour for [app]: its own colour, else the global one (0 = 기본). */
+    fun colorFor(app: AppEntry): Int {
+        val p = LauncherApp.instance.prefs
+        return p.appIconColor(app.key) ?: p.iconColor
+    }
+
+    /** A hand-made 아늑단 icon in [color]. */
+    fun catAsset(name: String, color: Int): Bitmap? = asset(name)?.let { IconColors.recolor(it, color, "asset:$name") }
+
     fun invalidate() {
         cacheDay = today()
         cache.evictAll()
@@ -130,19 +139,20 @@ class IconProvider(private val ctx: Context) {
     private fun render(app: AppEntry, size: Int): Bitmap {
         val prefs = LauncherApp.instance.prefs
         val density = ctx.resources.displayMetrics.densityDpi
+        val col = colorFor(app)
         // 1) what the user picked for this app
         val ov = prefs.iconOverrides()[app.key]
         when {
             ov == null -> {}
             ov == ORIGINAL -> return originalIcon(app, size)
             ov.startsWith(FILE) -> CustomIcons.load(ctx, ov.removePrefix(FILE))?.let { return scaled(it, size) }
-            ov.startsWith(LINE) -> LineIcons.render(ctx, ov.removePrefix(LINE), size, app.packageName)?.let { return it }
+            ov.startsWith(LINE) -> LineIcons.render(ctx, ov.removePrefix(LINE), size, app.packageName, col)?.let { return it }
             ov.startsWith(PACK) -> {
                 val rest = ov.removePrefix(PACK)
                 IconPacks.get(ctx, rest.substringBefore(':'))?.drawable(rest.substringAfter(':'), density)
                     ?.let { return drawableToBitmap(it, size) }
             }
-            else -> asset(ov)?.let { return scaled(it, size) }
+            else -> catAsset(ov, col)?.let { return scaled(it, size) }
         }
         // 2) the launcher's own entry keeps the icon chosen in settings
         if (app.packageName == ctx.packageName) return originalIcon(app, size)
@@ -151,7 +161,7 @@ class IconProvider(private val ctx: Context) {
             "none" -> originalIcon(app, size)
             "builtin" -> {
                 // hand-made cat icon > generated cat icon (Arcticons drawing on the cat frame) > own icon in the cat frame
-                val cat = autoMap[app.packageName]?.let { asset(it) }
+                val cat = autoMap[app.packageName]?.let { catAsset(it, col) }
                 when {
                     cat != null -> {
                         LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> hand ${autoMap[app.packageName]}")
@@ -160,12 +170,12 @@ class IconProvider(private val ctx: Context) {
                     !prefs.catPlate -> originalIcon(app, size)
                     else -> {
                         val name = LineIcons.nameFor(ctx, app.component)
-                        val made = name?.let { LineIcons.render(ctx, it, size, app.packageName) }
+                        val made = name?.let { LineIcons.render(ctx, it, size, app.packageName, col) }
                         LauncherApp.dlog("cat icon ${app.component.flattenToShortString()} -> " +
                             if (made != null) "drawing $name (${LineIcons.tileFor(app.packageName)})" else "own icon in frame")
                         made ?: run {
                             val d = try { app.info.getBadgedIcon(density) } catch (_: Exception) { null }
-                            if (d != null) LineIcons.renderOriginal(ctx, d, size, app.packageName) else originalIcon(app, size)
+                            if (d != null) LineIcons.renderOriginal(ctx, d, size, app.packageName, col) else originalIcon(app, size)
                         }
                     }
                 }
@@ -192,7 +202,8 @@ class IconProvider(private val ctx: Context) {
     }
 
     fun folderIcon(color: String, contents: List<AppEntry>, size: Int): Bitmap {
-        val base = asset(folderAsset(color)) ?: asset("folder")
+        // the default (teal) folder follows the icon colour; pink / gold / navy folders keep theirs
+        val base = (if (color == "teal") catAsset("folder", LauncherApp.instance.prefs.iconColor) else asset(folderAsset(color))) ?: asset("folder")
         val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)

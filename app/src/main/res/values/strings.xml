@@ -3,4 +3,6 @@
     <string name="app_name">아늑이 런처</string>
     <string name="settings_name">아늑이 런처 설정</string>
     <string name="admin_desc">제스처로 화면을 끌 때만 사용해요.</string>
+    <string name="wallpaper_name">아늑단 움직이는 배경</string>
+    <string name="wallpaper_desc">아늑이 런처 설정 → 배경화면 → 움직이는 배경에서 고른 패턴·동영상·GIF를 홈 화면과 잠금 화면에 보여 줘요.</string>
 </resources>

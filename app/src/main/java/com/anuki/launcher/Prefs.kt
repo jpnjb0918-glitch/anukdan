@@ -57,6 +57,8 @@ class Prefs(ctx: Context) {
     var catIcons by boolPref("cat_icons", true)
     var catPlate by boolPref("cat_plate", true)
     var iconPack by strPref("icon_pack", "builtin")   // builtin | none | icon pack package name
+    var updateCheck by boolPref("update_check", true)  // ask about new versions when the launcher starts
+    var iconColor by intPref("icon_color", 0)          // 0 = 기본 (see IconColors)
     var movingBg by strPref("moving_bg", "")          // "" | pattern | video:<file> | anim:<file> (see MovingWallpaper)
 
     // badges: off | dot | count
@@ -103,6 +105,19 @@ class Prefs(ctx: Context) {
         sp.edit().putString("icon_overrides", JSONObject(m as Map<*, *>).toString()).apply()
         android.util.Log.d("Anuki", "icon override $key -> $value")
         overridesCache = m
+        bump()
+    }
+
+    // ------------------------------------------------------------ per-app icon colours
+    fun appIconColor(key: String): Int? = try {
+        val o = JSONObject(sp.getString("icon_colors", "{}") ?: "{}")
+        if (o.has(key)) o.getInt(key) else null
+    } catch (_: Exception) { null }
+
+    fun setAppIconColor(key: String, color: Int?) {
+        val o = try { JSONObject(sp.getString("icon_colors", "{}") ?: "{}") } catch (_: Exception) { JSONObject() }
+        if (color == null) o.remove(key) else o.put(key, color)
+        sp.edit().putString("icon_colors", o.toString()).apply()
         bump()
     }
 

@@ -120,6 +120,7 @@ object Dialogs {
     private const val OPT_PHOTO = "@photo"
     private const val OPT_PACK = "@pack"
     private const val OPT_LINE = "@lines"
+    private const val OPT_COLOR = "@color"
 
     /** Icon grid for one app: auto / original / photo / more cat icons (generated) / another icon pack / the 54 cat icons. */
     fun iconPicker(a: Activity, app: AppEntry, onDone: () -> Unit, onPhoto: (() -> Unit)? = null) {
@@ -131,6 +132,7 @@ object Dialogs {
         options += IconProvider.ORIGINAL
         if (onPhoto != null) options += OPT_PHOTO
         options += OPT_LINE
+        options += OPT_COLOR
         if (packs.isNotEmpty()) options += OPT_PACK
         options += icons.catNames
         val size = a.dp(48f)
@@ -153,6 +155,7 @@ object Dialogs {
                     IconProvider.ORIGINAL -> "원래"
                     OPT_PHOTO -> "사진"
                     OPT_LINE -> "더 많은 아늑단"
+                    OPT_COLOR -> "색 바꾸기"
                     OPT_PACK -> "아이콘 팩"
                     else -> ""
                 }
@@ -161,9 +164,10 @@ object Dialogs {
                     IconProvider.ORIGINAL -> iv.setImageBitmap(icons.originalIcon(app, size))
                     OPT_PHOTO -> iv.setImageResource(android.R.drawable.ic_menu_gallery)
                     OPT_PACK -> iv.setImageResource(android.R.drawable.ic_menu_view)
-                    OPT_LINE -> iv.setImageBitmap(LineIcons.nameFor(a, app.component)?.let { LineIcons.render(a, it, size, app.packageName) }
-                        ?: icons.asset("folder"))
-                    else -> iv.setImageBitmap(icons.asset(o))
+                    OPT_LINE -> iv.setImageBitmap(LineIcons.nameFor(a, app.component)?.let { LineIcons.render(a, it, size, app.packageName, icons.colorFor(app)) }
+                        ?: icons.catAsset("folder", icons.colorFor(app)))
+                    OPT_COLOR -> iv.setImageDrawable(paletteDrawable())
+                    else -> iv.setImageBitmap(icons.catAsset(o, icons.colorFor(app)))
                 }
                 col.contentDescription = if (label.isNotEmpty()) "아이콘 선택: $label" else "아늑단 아이콘: $o"
                 col.addView(iv, LinearLayout.LayoutParams(size, size))
@@ -177,6 +181,11 @@ object Dialogs {
                 OPT_PHOTO -> onPhoto?.invoke()
                 OPT_PACK -> packIconPicker(a, app, packs, onDone)
                 OPT_LINE -> lineIconGrid(a, app, onDone)
+                OPT_COLOR -> iconColor(a, "${app.label} 아이콘 색", prefs.appIconColor(app.key), sampleApp = app, allowFollow = true) { c ->
+                    prefs.setAppIconColor(app.key, c)
+                    icons.invalidate()
+                    onDone()
+                }
                 else -> {
                     prefs.setIconOverride(app.key, if (o == OPT_AUTO) null else o)
                     icons.invalidate()
@@ -240,7 +249,8 @@ object Dialogs {
             val (names, match) = r ?: return@loading
             val all = if (match != null) listOf(match) + names.filter { it != match } else names
             val size = a.dp(48f)
-            searchGrid(a, "아늑단 아이콘 (${names.size}개)", all, { iv, name -> iv.setImageBitmap(LineIcons.render(a, name, size)) }) { name ->
+            val col = LauncherApp.instance.icons.colorFor(app)
+            searchGrid(a, "아늑단 아이콘 (${names.size}개)", all, { iv, name -> iv.setImageBitmap(LineIcons.render(a, name, size, name, col)) }) { name ->
                 LauncherApp.instance.prefs.setIconOverride(app.key, IconProvider.LINE + name)
                 LauncherApp.instance.icons.invalidate()
                 onDone()
@@ -293,6 +303,96 @@ object Dialogs {
             if (pick(shown[position])) dialog?.dismiss()
         }
         dialog = AlertDialog.Builder(a).setTitle(title).setView(column).setNegativeButton("취소", null).show()
+    }
+
+    /** A small colour wheel for the "색 바꾸기" cell. */
+    private fun paletteDrawable() = android.graphics.drawable.GradientDrawable().apply {
+        shape = android.graphics.drawable.GradientDrawable.OVAL
+        gradientType = android.graphics.drawable.GradientDrawable.SWEEP_GRADIENT
+        colors = intArrayOf(0xFFEC7474.toInt(), 0xFFE4B01C.toInt(), 0xFF58C46A.toInt(), 0xFF4BD5D6.toInt(), 0xFF5AA9E6.toInt(), 0xFF9B7BD4.toInt(), 0xFFEC7474.toInt())
+        setStroke(3, 0xFF111111.toInt())
+    }
+
+    /**
+     * Icon colour picker: preset swatches, "직접 고르기" (hue / strength / brightness sliders with a preview),
+     * and for a single app "전체 색 따르기" (null). [onPick] gets the colour (0 = 기본).
+     */
+    fun iconColor(a: Activity, title: String, current: Int?, sampleApp: AppEntry? = null, allowFollow: Boolean = false, onPick: (Int?) -> Unit) {
+        val icons = LauncherApp.instance.icons
+        val options = ArrayList<Pair<Int?, String>>()
+        if (allowFollow) options += (null to "전체 색 따르기")
+        options += IconColors.PRESETS.map { (c, n) -> (c as Int?) to n }
+        val grid = GridView(a).apply {
+            numColumns = 4
+            verticalSpacing = a.dp(12f)
+            setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(4f))
+        }
+        var dialog: AlertDialog? = null
+        grid.adapter = object : BaseAdapter() {
+            override fun getCount() = options.size
+            override fun getItem(position: Int) = options[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val (c, name) = options[position]
+                val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+                val iv = ImageView(a)
+                val shown = c ?: LauncherApp.instance.prefs.iconColor
+                iv.setImageBitmap(icons.catAsset("folder", shown))
+                if (c == current) iv.background = Palette.rounded(0x332E9497, a.dp(12f).toFloat(), a.dp(2f), Palette.TEAL)
+                col.addView(iv, LinearLayout.LayoutParams(a.dp(52f), a.dp(52f)))
+                col.addView(TextView(a).apply { text = name; textSize = 11f; gravity = Gravity.CENTER; maxLines = 2 })
+                col.contentDescription = "아이콘 색: $name"
+                return col
+            }
+        }
+        grid.setOnItemClickListener { _, _, position, _ ->
+            dialog?.dismiss()
+            onPick(options[position].first)
+        }
+        dialog = AlertDialog.Builder(a).setTitle(title).setView(grid)
+            .setNeutralButton("직접 고르기") { _, _ -> customColor(a, title, current?.takeIf { it != 0 } ?: 0xFF4BD5D6.toInt(), sampleApp, onPick) }
+            .setNegativeButton("취소", null).show()
+    }
+
+    private fun customColor(a: Activity, title: String, start: Int, sampleApp: AppEntry?, onPick: (Int?) -> Unit) {
+        val icons = LauncherApp.instance.icons
+        val hsv = FloatArray(3)
+        IconColors.toHsv(start, hsv)
+        val box = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(20f), a.dp(12f), a.dp(20f), 0) }
+        val previews = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        val p1 = ImageView(a); val p2 = ImageView(a); val p3 = ImageView(a)
+        for (v in listOf(p1, p2, p3)) previews.addView(v, LinearLayout.LayoutParams(a.dp(64f), a.dp(64f)).apply { setMargins(a.dp(8f), 0, a.dp(8f), 0) })
+        box.addView(previews)
+        val swatch = View(a)
+        box.addView(swatch, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(10f)).apply { topMargin = a.dp(10f) })
+        fun color() = IconColors.fromHsv(0xFF, hsv[0], hsv[1], hsv[2])
+        fun update() {
+            val c = color()
+            swatch.background = Palette.rounded(c, a.dp(5f).toFloat())
+            p1.setImageBitmap(icons.catAsset(sampleApp?.let { icons.catIconName(it) } ?: "web-browser", c))
+            p2.setImageBitmap(LineIcons.render(a, "google_maps", a.dp(64f), "google_maps", c) ?: icons.catAsset("camera", c))
+            p3.setImageBitmap(icons.catAsset("folder", c))
+        }
+        fun slider(label: String, max: Int, value: Int, onChange: (Int) -> Unit) {
+            box.addView(TextView(a).apply { text = label; textSize = 13f; setPadding(0, a.dp(12f), 0, 0) })
+            box.addView(android.widget.SeekBar(a).apply {
+                this.max = max
+                progress = value
+                contentDescription = label
+                setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: android.widget.SeekBar?, p: Int, fromUser: Boolean) { onChange(p); update() }
+                    override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                    override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                })
+            })
+        }
+        slider("색상", 359, hsv[0].toInt()) { hsv[0] = it.toFloat() }
+        slider("진하기", 100, (hsv[1] * 100).toInt()) { hsv[1] = it / 100f }
+        slider("밝기 (너무 어두우면 선 그림이 안 보여요)", 70, ((hsv[2] * 100).toInt() - 30).coerceIn(0, 70)) { hsv[2] = (it + 30) / 100f }
+        update()
+        AlertDialog.Builder(a).setTitle("$title — 직접 고르기").setView(android.widget.ScrollView(a).apply { addView(box) })
+            .setPositiveButton("확인") { _, _ -> onPick(color()) }
+            .setNegativeButton("취소", null).show()
     }
 
     /** Frame for a photo icon. */
@@ -393,7 +493,8 @@ object Dialogs {
             setPadding(a.dp(20f), a.dp(14f), a.dp(20f), a.dp(2f))
         })
         box.addView(TextView(a).apply {
-            text = "아늑이 런처 홈 화면에서만 움직여요. 잠금 화면은 그대로예요."
+            text = if (AnukiWallpaperService.isActive(a)) "지금 휴대폰 배경화면(홈·잠금 화면)으로 쓰는 중이에요."
+            else "기본은 아늑이 런처 홈 화면에서만 움직여요. 잠금 화면에도 쓰려면 아래 '휴대폰 배경화면으로 설정'을 누르세요."
             textSize = 12f
             alpha = 0.7f
             setPadding(a.dp(20f), 0, a.dp(20f), a.dp(4f))
@@ -411,9 +512,15 @@ object Dialogs {
             Toast.makeText(a, "움직이는 배경을 켰어요. 홈 화면에서 보여요.", Toast.LENGTH_SHORT).show()
         }
         option("내 동영상·GIF 고르기") { MovingWallpaper.pick(a) }
+        option("휴대폰 배경화면으로 설정 (잠금 화면 포함)") {
+            if (prefs.movingBg.isEmpty()) MovingWallpaper.set(MovingWallpaper.PATTERN, a)
+            Toast.makeText(a, "다음 화면에서 '배경화면 설정'을 누르고, 고를 수 있으면 '홈 화면 및 잠금 화면'을 고르세요", Toast.LENGTH_LONG).show()
+            if (!AnukiWallpaperService.openSystemPreview(a)) Toast.makeText(a, "이 휴대폰에서는 배경화면 설정 화면을 열 수 없어요", Toast.LENGTH_SHORT).show()
+        }
         option("움직이는 배경 끄기", enabled = prefs.movingBg.isNotEmpty()) {
             MovingWallpaper.set("", a)
-            Toast.makeText(a, "움직이는 배경을 껐어요", Toast.LENGTH_SHORT).show()
+            val msg = if (AnukiWallpaperService.isActive(a)) "움직임을 껐어요. 휴대폰 배경화면은 멈춘 아늑단 패턴으로 남아요." else "움직이는 배경을 껐어요"
+            Toast.makeText(a, msg, Toast.LENGTH_LONG).show()
         }
         dialog = AlertDialog.Builder(a).setTitle("배경화면").setView(android.widget.ScrollView(a).apply { addView(box) })
             .setNeutralButton("다른 사진 고르기") { _, _ ->

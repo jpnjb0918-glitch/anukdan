@@ -84,6 +84,13 @@ class SettingsActivity : Activity() {
         action("아이콘 팩", Dialogs.iconPackLabel(this) + " · 설치한 다른 아이콘 팩도 고를 수 있어요") {
             Dialogs.iconPackChooser(this) { build() }
         }
+        action("아이콘 색", IconColors.name(prefs.iconColor) + " · 앱 하나만 바꾸려면 아이콘을 길게 눌러 '아이콘 바꾸기' → '색 바꾸기'") {
+            Dialogs.iconColor(this, "아이콘 색", prefs.iconColor) { c ->
+                prefs.iconColor = c ?: IconColors.DEFAULT
+                LauncherApp.instance.icons.invalidate()
+                build()
+            }
+        }
         switch("모든 앱을 아늑단 아이콘으로", "손으로 그린 아늑단 아이콘(54종)이 없는 앱도 아늑단 틀 아이콘으로 바꿔요 (15,322종, 없으면 원래 아이콘을 틀에 넣어요)", prefs.catPlate) { prefs.catPlate = it }
         note("앱 아이콘을 길게 눌러 '아이콘 바꾸기'로 앱마다 아늑단 아이콘·사진·다른 아이콘 팩의 아이콘을 고를 수 있어요.")
         action("아늑이 런처 앱 아이콘", AppIcon.label(this)) {
@@ -132,7 +139,9 @@ class SettingsActivity : Activity() {
         }
 
         section("정보")
-        note("아늑이 런처 1.0 · 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
+        note("아늑이 런처 v${Updater.currentName(this)} · 개인용 런처예요. AI 기능, 광고, 분석 SDK, 결제는 넣지 않았어요.")
+        action("업데이트 확인", "지금 v${Updater.currentName(this)} · 새 버전이 있으면 기본판·배지판 중 골라 받아요") { Updater.checkNow(this) }
+        switch("켤 때 새 버전 알림", "하루에 한 번 확인해요", prefs.updateCheck) { prefs.updateCheck = it }
         action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
