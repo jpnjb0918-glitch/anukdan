@@ -70,6 +70,10 @@ class IconProvider(private val ctx: Context) {
     }
     private val pending = HashMap<String, MutableList<(Bitmap) -> Unit>>()
 
+    /** The folder's first three apps whose full-size icon isn't drawn yet. */
+    fun folderIconMissing(contents: List<AppEntry>): List<AppEntry> =
+        contents.take(3).filter { cache.get(it.key + "@" + homeSize()) == null }
+
     /** Icon size on the home screen, dock and drawer in px (54dp × 아이콘 크기). */
     fun homeSize(): Int {
         val d = ctx.resources.displayMetrics.density
@@ -268,6 +272,7 @@ class IconProvider(private val ctx: Context) {
         return if (d == null) Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888) else drawableToBitmap(d, size)
     }
 
+    /** Folder picture with up to three mini icons; minis not drawn yet are left out (see [folderIconMissing]). */
     fun folderIcon(color: String, contents: List<AppEntry>, size: Int): Bitmap {
         // the default (teal) folder follows the icon colour; pink / gold / navy folders keep theirs
         val base = (if (color == "teal") catAsset("folder", IconColors.current()) else asset(folderAsset(color))) ?: asset("folder")
@@ -280,8 +285,8 @@ class IconProvider(private val ctx: Context) {
         val cy = size * 0.655f
         val xs = floatArrayOf(0.28f, 0.5f, 0.72f)
         for ((i, app) in contents.take(3).withIndex()) {
-            // the full-size icon is usually drawn already: shrink that instead of drawing a new small one
-            val icon = cache.get(app.key + "@" + homeSize()) ?: appIcon(app, mini.toInt().coerceAtLeast(8))
+            // shrink the full-size icon (drawn in the background, never here on the main thread)
+            val icon = cache.get(app.key + "@" + homeSize()) ?: continue
             val cx = size * xs[i]
             c.drawBitmap(icon, null, RectF(cx - mini / 2, cy - mini / 2, cx + mini / 2, cy + mini / 2), paint)
         }

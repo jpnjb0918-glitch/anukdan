@@ -417,6 +417,15 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.tag = item
         v.iconSize = iconSize
         v.icon = icons.folderIcon(item.color, contents, iconSize)
+        // the minis whose icons aren't drawn yet come in when they are
+        val missing = icons.folderIconMissing(contents)
+        if (missing.isNotEmpty()) {
+            var left = missing.size
+            for (a in missing) icons.appIconAsync(a, iconSize) {
+                left--
+                if (left == 0 && v.item === item) v.icon = icons.folderIcon(item.color, contents, iconSize)
+            }
+        }
         v.label = item.title
         v.showLabel = labels
         v.labelPx = prefs.labelPx
@@ -694,6 +703,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         val entryApp = app ?: item?.takeIf { it.type == HomeItem.TYPE_APP }?.let { apps.find(it.key) }
         // 홈 화면 배치 잠금: the menu still opens, but nothing can be dragged, added, moved or removed
         if (!prefs.lockLayout) drag.startPending(DragInfo(source, item, entryApp, view), rawX, rawY)
+        // …and the rest of this touch must not turn into a page swipe or the swipe-up gesture either
+        else view.parent?.requestDisallowInterceptTouchEvent(true)
         var entries = menuFor(item, entryApp, source)
         if (prefs.lockLayout) entries = lockedMenu(entries)
         showPopup(view, entries)

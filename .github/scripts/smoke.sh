@@ -1353,7 +1353,8 @@ if [ -n "$P" ]; then
   set -- $P
   adb shell input draganddrop $1 $2 $1 $(( $2 - 330 )) 2500
   sleep 2
-  echo "settings icon after drag (locked)=$(home_icon Settings)" >> $LOG
+  echo "settings icon after drag (locked)=$(home_icon Settings) (same place = not moved; drawer must stay closed)" >> $LOG
+  shot 100b-lock-after-drag
   # unlock from the menu
   adb shell input swipe $P $P 1500
   sleep 1
@@ -1426,7 +1427,7 @@ adb shell input keyevent KEYCODE_HOME
 sleep 2
 adb logcat -c
 for i in 1 2 3 4 5; do adb shell input swipe 900 1200 150 1200 250; sleep 1; done
-adb logcat -d | grep -E "home page ->" | tr -s ' ' | cut -d' ' -f6- | tr '\n' ' ' >> $LOG; echo >> $LOG
+adb logcat -d | grep -E "home page ->|page swipe:" | tr -s ' ' | cut -d' ' -f6- >> $LOG
 toggle "무한 스크롤"
 
 # 6) status bar hidden on the home screen

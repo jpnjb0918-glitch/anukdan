@@ -238,6 +238,7 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
                     if (wrap && pageCount > 1) {
                         if (target >= pageCount) target = 0 else if (target < 0) target = pageCount - 1
                     }
+                    if (LauncherApp.debug) LauncherApp.dlog("page swipe: vx=${vx.toInt()} from $currentPage to $target of $pageCount wrap=$wrap")
                     snapToPage(target)
                 } else if (mode == 2) {
                     val dy = ev.y - downY
