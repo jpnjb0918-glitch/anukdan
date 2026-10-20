@@ -230,10 +230,18 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
                 val vy = v?.yVelocity ?: 0f
                 if (mode == 1) {
                     val fling = cfg.scaledMinimumFlingVelocity * 4
+                    // a quick flick, or a drag of 40% of the screen, turns the page (the flick speed can read 0 when the
+                    // finger rests a moment before lifting, so the distance counts on its own too). Past the last page
+                    // with 무한 스크롤 the pull stops at 45%, so 20% is enough there.
+                    val dragged = downX - ev.x
+                    val beyond = (dragged > 0 && currentPage == pageCount - 1) || (dragged < 0 && currentPage == 0)
+                    val need = width * if (wrap && beyond) 0.2f else 0.4f
                     var target = when {
                         vx > fling -> currentPage - 1
                         vx < -fling -> currentPage + 1
-                        else -> ((scrollX.toFloat() / maxOf(1, width))).roundToInt()
+                        dragged > need -> currentPage + 1
+                        dragged < -need -> currentPage - 1
+                        else -> currentPage
                     }
                     if (wrap && pageCount > 1) {
                         if (target >= pageCount) target = 0 else if (target < 0) target = pageCount - 1

@@ -1355,6 +1355,8 @@ if [ -n "$P" ]; then
   sleep 2
   echo "settings icon after drag (locked)=$(home_icon Settings) (same place = not moved; drawer must stay closed)" >> $LOG
   shot 100b-lock-after-drag
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
   # unlock from the menu
   adb shell input swipe $P $P 1500
   sleep 1

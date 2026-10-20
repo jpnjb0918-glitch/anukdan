@@ -319,9 +319,13 @@ class DrawerPager(ctx: Context) : ViewGroup(ctx) {
                 v?.computeCurrentVelocity(1000)
                 val vx = v?.xVelocity ?: 0f
                 val fling = cfg.scaledMinimumFlingVelocity * 4
+                val dragged = downX - ev.x
+                val up = ev.actionMasked == MotionEvent.ACTION_UP
                 val target = when {
-                    ev.actionMasked == MotionEvent.ACTION_UP && vx > fling -> currentPage - 1
-                    ev.actionMasked == MotionEvent.ACTION_UP && vx < -fling -> currentPage + 1
+                    up && vx > fling -> currentPage - 1
+                    up && vx < -fling -> currentPage + 1
+                    up && dragged > width * 0.4f -> currentPage + 1
+                    up && dragged < -width * 0.4f -> currentPage - 1
                     else -> Math.round(scrollX.toFloat() / maxOf(1, width))
                 }
                 snapTo(target)
