@@ -1658,17 +1658,19 @@ far, near = 380, 90
 a, b = (far, near) if kind == 'in' else (near, far)
 out = []
 def ev(t, c, v): out.append(f"sendevent {dev} {t} {c} {v}")
+# the emulator's touch devices report pressure, and Android treats a pointer at pressure 0 as hovering,
+# so each finger goes down with a pressure (58) and a contact size (48)
 for slot, tid, x in ((0, 701, 540 - a), (1, 702, 540 + a)):
-    ev(3, 47, slot); ev(3, 57, tid); ev(3, 53, sx(x)); ev(3, 54, sy(cy))
-ev(1, 330, 1); ev(0, 0, 0)
+    ev(3, 47, slot); ev(3, 57, tid); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(x)); ev(3, 54, sy(cy))
+ev(0, 0, 0)
 for i in range(1, 11):
     d = a + (b - a) * i / 10
     for slot, x in ((0, 540 - d), (1, 540 + d)):
         ev(3, 47, slot); ev(3, 53, sx(x)); ev(3, 54, sy(cy))
     ev(0, 0, 0)
 for slot in (0, 1):
-    ev(3, 47, slot); ev(3, 57, 4294967295)
-ev(1, 330, 0); ev(0, 0, 0)
+    ev(3, 47, slot); ev(3, 58, 0); ev(3, 57, 4294967295)
+ev(0, 0, 0)
 print("\n".join(out))
 PY
 }
@@ -1716,7 +1718,8 @@ if [ -n "$TDEV" ]; then
 import sys
 dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 x, y = int(540 * mx / 1080), int(1250 * my / 2400)
-e = [(3, 47, 0), (3, 57, 801), (3, 53, x), (3, 54, y), (1, 330, 1), (0, 0, 0), (3, 57, 4294967295), (1, 330, 0), (0, 0, 0)]
+e = [(3, 47, 0), (3, 57, 801), (3, 58, 512), (3, 48, 8), (3, 53, x), (3, 54, y), (0, 0, 0),
+     (3, 58, 0), (3, 57, 4294967295), (0, 0, 0)]
 # the swipe and the tap in one root shell, so the tap lands while the page is still sliding
 print("input swipe 900 1200 150 1200 120")
 print("\n".join(f"sendevent {dev} {t} {c} {v}" for t, c, v in e))
