@@ -1524,6 +1524,11 @@ sleep 2
 dump cv0
 DF=$(ui shots/cv0.xml list | awk '$1=="폴더" && $3>=2000 {print $2" "$3; exit}')
 echo "dock folder=$DF" >> $LOG
+# no folder in the dock: the home-screen folder made earlier works the same way
+if [ -z "$DF" ]; then
+  DF=$(home_folder shots/cv0.xml)
+  echo "home folder instead=$DF" >> $LOG
+fi
 if [ -n "$DF" ]; then
   long_menu $DF
   CV=$(ui shots/lm.xml text "커버 폴더로 쓰기")
@@ -1600,14 +1605,29 @@ if [ -n "$P" ]; then
 fi
 
 # 3) two-finger pinch on the home screen (raw multi-touch events)
-pinch() {
+# runs a pushed script as root (writing raw touch events needs it; the google_apis image is userdebug): su, else adb root
+root_sh() {
+  adb push "$1" /data/local/tmp/raw.sh > /dev/null
+  local R=$(adb shell su 0 sh /data/local/tmp/raw.sh 2>&1 | tr -d '\r' | head -3)
+  [ -z "$R" ] && return 0
+  echo "su: $R" >> $LOG
+  adb root > /dev/null 2>&1
+  adb wait-for-device
+  sleep 2
+  R=$(adb shell sh /data/local/tmp/raw.sh 2>&1 | tr -d '\r' | head -3)
+  echo "adb root: ${R:-ok}" >> $LOG
+}
+touch_info() {
   local INFO=$(adb shell getevent -pl 2>/dev/null | tr -d '\r')
-  local DEV=$(echo "$INFO" | awk '/^add device/{d=$4} /ABS_MT_POSITION_X/{print d; exit}')
-  local MAXX=$(echo "$INFO" | awk '/ABS_MT_POSITION_X/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
-  local MAXY=$(echo "$INFO" | awk '/ABS_MT_POSITION_Y/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
-  echo "touch device=$DEV max=$MAXX,$MAXY" >> $LOG
-  [ -z "$DEV" ] && return 1
-  python3 - "$DEV" "$MAXX" "$MAXY" "$1" > shots/pinch.sh <<'PY'
+  TDEV=$(echo "$INFO" | awk '/^add device/{d=$4} /ABS_MT_POSITION_X/{print d; exit}')
+  TMAXX=$(echo "$INFO" | awk '/ABS_MT_POSITION_X/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
+  TMAXY=$(echo "$INFO" | awk '/ABS_MT_POSITION_Y/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
+  echo "touch device=$TDEV max=$TMAXX,$TMAXY" >> $LOG
+  [ -n "$TDEV" ]
+}
+pinch() {
+  touch_info || return 1
+  python3 - "$TDEV" "$TMAXX" "$TMAXY" "$1" > shots/pinch.sh <<'PY'
 import sys
 dev, mx, my, kind = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
 W, H = 1080, 2400
@@ -1629,9 +1649,9 @@ for i in range(1, 11):
 for slot in (0, 1):
     ev(3, 47, slot); ev(3, 57, 4294967295)
 ev(1, 330, 0); ev(0, 0, 0)
-print("; ".join(out))
+print("\n".join(out))
 PY
-  adb shell "$(cat shots/pinch.sh)" 2>&1 | head -3 >> $LOG
+  root_sh shots/pinch.sh
 }
 adb shell input keyevent KEYCODE_HOME
 sleep 2
@@ -1646,6 +1666,32 @@ adb logcat -c
 pinch out
 sleep 2
 adb logcat -d | grep -E "pinch ratio|gesture pinch" | tail -3 >> $LOG
+
+# 3b) a tap right after a page turn (while the page still slides) finishes the turn, not stuck half-way
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+if touch_info; then
+  python3 - "$TDEV" "$TMAXX" "$TMAXY" > shots/tap.sh <<'PY'
+import sys
+dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+x, y = int(540 * mx / 1080), int(1250 * my / 2400)
+e = [(3, 47, 0), (3, 57, 801), (3, 53, x), (3, 54, y), (1, 330, 1), (0, 0, 0), (3, 57, 4294967295), (1, 330, 0), (0, 0, 0)]
+print("\n".join(f"sendevent {dev} {t} {c} {v}" for t, c, v in e))
+PY
+  # make the root shell ready first, so the tap goes out right after the swipe
+  root_sh shots/tap.sh
+  sleep 2
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb logcat -c
+  adb shell "input swipe 900 1200 150 1200 120; su 0 sh /data/local/tmp/raw.sh 2>/dev/null || sh /data/local/tmp/raw.sh"
+  sleep 2
+  adb logcat -d | grep -E "page swipe:|page settle|home page ->" | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  shot 122b-tap-during-page-turn
+  echo "after the tap: top=$(top_activity)" >> $LOG
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+fi
 
 # 4) 아늑단 날씨: add it, find the city by name, wait for the reading
 adb logcat -c

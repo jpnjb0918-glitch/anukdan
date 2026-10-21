@@ -15,12 +15,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
 import kotlin.math.max
@@ -40,7 +35,6 @@ object Weather {
     const val MAX_AGE = 30 * 60 * 1000L
     const val SOURCE = "날씨 정보: Open-Meteo.com (CC BY 4.0)"
     private val sp by lazy { LauncherApp.instance.getSharedPreferences("anuki_weather", Context.MODE_PRIVATE) }
-    private val main = Handler(Looper.getMainLooper())
     private val running = HashSet<String>()
     private val failedAt = HashMap<String, Long>()
     val listeners = ArrayList<() -> Unit>()
@@ -55,11 +49,16 @@ object Weather {
         return a to b
     }
 
+    /** Readings already read from storage (drawing asks several times per frame). */
+    private val memo = java.util.concurrent.ConcurrentHashMap<String, Now>()
+
     fun cached(loc: String): Now? {
+        memo[loc]?.let { return it }
         val t = sp.getString("w:$loc", null) ?: return null
         return try {
             val o = JSONObject(t)
             Now(o.getDouble("t"), o.getInt("c"), o.getBoolean("d"), o.getDouble("x"), o.getDouble("n"), o.getLong("at"))
+                .also { memo[loc] = it }
         } catch (_: Exception) { null }
     }
 
@@ -76,7 +75,7 @@ object Weather {
         if (!force && synchronized(running) { failedAt[loc] ?: 0L } > now - 60_000) return
         val (lat, lon) = parseLoc(loc) ?: return
         synchronized(running) { if (!running.add(loc)) return }
-        Thread {
+        inBackground({
             try {
                 val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
                     "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min" +
@@ -93,6 +92,7 @@ object Weather {
                     "w:$loc",
                     JSONObject().put("t", r.temp).put("c", r.code).put("d", r.day).put("x", r.max).put("n", r.min).put("at", r.at).toString(),
                 ).apply()
+                memo[loc] = r
                 synchronized(running) { failedAt.remove(loc) }
                 LauncherApp.dlog("weather $loc: ${r.temp}° code ${r.code} ${desc(r.code)} high ${r.max} low ${r.min}")
             } catch (e: Exception) {
@@ -101,13 +101,12 @@ object Weather {
             } finally {
                 synchronized(running) { running.remove(loc) }
             }
-            main.post { for (l in listeners.toList()) l() }
-        }.start()
+        }) { for (l in listeners.toList()) l() }
     }
 
     /** Cities called [q] (Open-Meteo geocoding, names in Korean where it has them); null when the search failed. */
     fun search(q: String, done: (List<Place>?) -> Unit) {
-        Thread {
+        inBackground({
             val out: List<Place>? = try {
                 val url = "https://geocoding-api.open-meteo.com/v1/search?name=" + URLEncoder.encode(q.trim(), "UTF-8") +
                     "&count=8&language=ko&format=json"
@@ -119,8 +118,8 @@ object Weather {
                 }
             } catch (e: Exception) { LauncherApp.dlog("weather search '$q' failed: $e"); null }
             LauncherApp.dlog("weather search '$q': ${out?.size ?: "failed"}")
-            main.post { done(out) }
-        }.start()
+            out
+        }, then = done)
     }
 
     fun hasLocationPermission(ctx: Context) =
@@ -132,7 +131,7 @@ object Weather {
         if (!hasLocationPermission(a)) { done(null); return }
         val lm = a.getSystemService(LocationManager::class.java) ?: run { done(null); return }
         fun named(l: Location) {
-            Thread {
+            inBackground({
                 val name = try {
                     @Suppress("DEPRECATION")
                     Geocoder(a, Locale.KOREA).getFromLocation(l.latitude, l.longitude, 1)?.firstOrNull()?.let {
@@ -141,8 +140,8 @@ object Weather {
                 } catch (_: Exception) { null }
                 val p = Place(name ?: "현재 위치", "현재 위치", l.latitude, l.longitude)
                 LauncherApp.dlog("weather current place: ${p.name}")
-                main.post { done(p) }
-            }.start()
+                p
+            }, then = done)
         }
         val last = try {
             lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.time }
@@ -161,16 +160,7 @@ object Weather {
         done(null)
     }
 
-    private fun get(url: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000
-        c.readTimeout = 10_000
-        c.setRequestProperty("User-Agent", "AnukiLauncher")
-        try {
-            if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode}")
-            return c.inputStream.bufferedReader().use { it.readText() }
-        } finally { c.disconnect() }
-    }
+    private fun get(url: String): String = Net.getText(url)
 
     /** WMO weather codes in plain Korean. */
     fun desc(code: Int): String = when (code) {
@@ -313,7 +303,7 @@ class WeatherWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
             }
             "rain" -> { cloud(c, b.centerX(), b.top + s * 0.44f, s * 0.78f); drops(c, b, s) }
             "snow" -> { cloud(c, b.centerX(), b.top + s * 0.44f, s * 0.78f); flakes(c, b, s) }
-            "storm" -> { cloud(c, b.centerX(), b.top + s * 0.42f, s * 0.78f); bolt(c, b.centerX(), b.top + s * 0.78f, s * 0.2f) }
+            "storm" -> { cloud(c, b.centerX(), b.top + s * 0.42f, s * 0.78f); drawBolt(c, b.centerX(), b.top + s * 0.78f, s * 0.2f) }
             "fog" -> {
                 cloud(c, b.centerX(), b.top + s * 0.42f, s * 0.72f)
                 for (i in 0..1) {
@@ -381,17 +371,4 @@ class WeatherWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         }
     }
 
-    private fun bolt(c: Canvas, x: Float, y: Float, h: Float) {
-        path.reset()
-        path.moveTo(x + 0.15f * h, y - h)
-        path.lineTo(x - 0.55f * h, y + 0.12f * h)
-        path.lineTo(x - 0.02f * h, y + 0.12f * h)
-        path.lineTo(x - 0.18f * h, y + h)
-        path.lineTo(x + 0.55f * h, y - 0.18f * h)
-        path.lineTo(x + 0.02f * h, y - 0.18f * h)
-        path.close()
-        fill.color = 0xFFE4B01C.toInt()
-        c.drawPath(path, fill)
-        c.drawPath(path, ink)
-    }
 }

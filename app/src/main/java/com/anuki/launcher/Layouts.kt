@@ -106,48 +106,33 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
 }
 
 /**
- * Horizontally paged container of [CellLayout]s with swipe-up/down, double-tap and two-finger pinch detection.
- * A swipe up that starts on an icon goes to [Listener.onIconSwipeUp] first (위로 쓸기 / 커버 폴더).
+ * Pages side by side, dragged and flung sideways: the home pages ([PagedView]) and the "가로 페이지" drawer
+ * ([DrawerPager]) share this. A quick flick, or a drag of 40% of the width, turns the page (the flick speed can read
+ * 0 when the finger rests a moment before lifting, so the distance counts on its own too). With [wrap] (무한 스크롤)
+ * the pull past the last page stops at 45% and 20% is enough to go round to the first.
  */
-class PagedView(ctx: Context) : ViewGroup(ctx) {
-    interface Listener {
-        fun onPageChanged(page: Int)
-        fun onSwipeUp()
-        fun onSwipeDown()
-        fun onDoubleTap()
-        fun onEmptyLongPress(rawX: Float, rawY: Float)
-        /** A swipe up that began on [child]; true when the icon handled it. */
-        fun onIconSwipeUp(child: View?): Boolean = false
-        fun onPinchIn() {}
-        fun onPinchOut() {}
-    }
-
-    var listener: Listener? = null
+open class HorizontalPager(ctx: Context) : ViewGroup(ctx) {
     var currentPage = 0
         private set
-    /** 무한 스크롤: past the last page comes the first again (and the other way round). */
     var wrap = false
-    private val scroller = Scroller(ctx)
+    protected val scroller = Scroller(ctx)
+    protected val cfg: ViewConfiguration = ViewConfiguration.get(ctx)
+    protected val slop = cfg.scaledTouchSlop
     private var velocity: VelocityTracker? = null
-    private val cfg = ViewConfiguration.get(ctx)
-    private val slop = cfg.scaledTouchSlop
-    private var downX = 0f
-    private var downY = 0f
+    protected var downX = 0f
+    protected var downY = 0f
     private var lastX = 0f
-    private var mode = 0 // 0 undecided, 1 horizontal, 2 vertical, 3 two-finger pinch
-    /** The icon (or widget) under the finger when the touch began. */
-    private var downChild: View? = null
-    private var pinchStart = 0f
-    private var pinchNow = 0f
-
-    private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean = true
-        override fun onDoubleTap(e: MotionEvent): Boolean { listener?.onDoubleTap(); return true }
-        override fun onLongPress(e: MotionEvent) { if (mode == 0) listener?.onEmptyLongPress(e.rawX, e.rawY) }
-    })
+    /** True while the finger drags the pages sideways (a layout pass then leaves the scroll alone). */
+    private var dragging = false
+    protected open val snapMillis = 280
 
     val pageCount: Int get() = childCount
-    fun page(i: Int): CellLayout = getChildAt(i) as CellLayout
+
+    /** The page changed (by a swipe or [snapToPage]). */
+    protected open fun onPageSelected(page: Int) {}
+
+    /** A sideways swipe ended: [vx] its speed, from page [from] to [to]. */
+    protected open fun onSwiped(vx: Float, from: Int, to: Int) {}
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -164,7 +149,7 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val w = r - l
         for (i in 0 until childCount) getChildAt(i).layout(i * w, 0, (i + 1) * w, b - t)
-        if (changed && scroller.isFinished) scrollTo(currentPage * w, 0)
+        if (scroller.isFinished && !dragging) scrollTo(currentPage * w, 0)
     }
 
     override fun computeScroll() {
@@ -176,30 +161,134 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
 
     fun snapToPage(p: Int, animate: Boolean = true) {
         val target = p.coerceIn(0, maxOf(0, pageCount - 1))
-        val dx = target * width - scrollX
         if (!scroller.isFinished) scroller.abortAnimation()
-        if (animate && width > 0) scroller.startScroll(scrollX, 0, dx, 0, 280) else scrollTo(target * width, 0)
+        val dx = target * width - scrollX
+        if (animate && width > 0) scroller.startScroll(scrollX, 0, dx, 0, snapMillis) else scrollTo(target * width, 0)
         val changed = target != currentPage
         currentPage = target
-        if (changed) listener?.onPageChanged(target)
+        if (changed) onPageSelected(target)
         invalidate()
     }
 
-    private fun track(ev: MotionEvent) {
-        val v = velocity ?: VelocityTracker.obtain().also { velocity = it }
-        v.addMovement(ev)
+    protected fun track(ev: MotionEvent) {
+        (velocity ?: VelocityTracker.obtain().also { velocity = it }).addMovement(ev)
+    }
+
+    /** (x, y) speed of the finger in px/s. */
+    protected fun speed(): FloatArray {
+        val v = velocity ?: return floatArrayOf(0f, 0f)
+        v.computeCurrentVelocity(1000)
+        return floatArrayOf(v.xVelocity, v.yVelocity)
+    }
+
+    protected fun recycleVelocity() { velocity?.recycle(); velocity = null }
+
+    /** A new touch. True when it caught a page still settling: the pages are being dragged again. */
+    protected fun touchDown(ev: MotionEvent): Boolean {
+        downX = ev.x; downY = ev.y; lastX = ev.x; dragging = false
+        velocity?.clear()
+        track(ev)
+        if (!scroller.isFinished) { scroller.abortAnimation(); dragging = true; return true }
+        return false
+    }
+
+    /** Past the touch slop sideways (more sideways than up or down): the pages start following the finger. */
+    protected fun startsSideways(ev: MotionEvent): Boolean {
+        val dx = ev.x - downX
+        if (abs(dx) > slop && abs(dx) > abs(ev.y - downY)) { dragging = true; lastX = ev.x; return true }
+        return false
+    }
+
+    protected fun dragTo(ev: MotionEvent) {
+        dragging = true
+        val dx = lastX - ev.x
+        lastX = ev.x
+        val edge = if (wrap && pageCount > 1) 0.45f else 0.2f
+        val nx = (scrollX + dx).coerceIn(-width * edge, (pageCount - 1) * width + width * edge)
+        scrollTo(nx.roundToInt(), 0)
+    }
+
+    /**
+     * A touch that ended without dragging the pages: if it caught a page half-way through settling
+     * (a tap or an up/down swipe right after a page turn), finish the turn instead of leaving it stuck between pages.
+     */
+    protected fun settle() {
+        dragging = false
+        if (scroller.isFinished && width > 0 && scrollX != currentPage * width) {
+            if (LauncherApp.debug) LauncherApp.dlog("page settle: scrollX=$scrollX -> page $currentPage")
+            snapToPage(currentPage)
+        }
+    }
+
+    /** The finger lifted (or the touch was cancelled): settle on a page. */
+    protected fun release(ev: MotionEvent, cancelled: Boolean) {
+        val vx = speed()[0]
+        val nearest = (scrollX.toFloat() / maxOf(1, width)).roundToInt()
+        var target = if (cancelled) nearest else {
+            val fling = cfg.scaledMinimumFlingVelocity * 4
+            val dragged = downX - ev.x
+            val beyond = (dragged > 0 && currentPage == pageCount - 1) || (dragged < 0 && currentPage == 0)
+            val need = width * if (wrap && beyond) 0.2f else 0.4f
+            when {
+                vx > fling -> currentPage - 1
+                vx < -fling -> currentPage + 1
+                dragged > need -> currentPage + 1
+                dragged < -need -> currentPage - 1
+                else -> nearest
+            }
+        }
+        if (wrap && pageCount > 1) {
+            if (target >= pageCount) target = 0 else if (target < 0) target = pageCount - 1
+        }
+        dragging = false
+        onSwiped(vx, currentPage, target)
+        snapToPage(target)
+        recycleVelocity()
+    }
+}
+
+/**
+ * The home pages ([CellLayout]s) with swipe-up/down, double-tap and two-finger pinch detection on top of the
+ * sideways paging. A swipe up that starts on an icon goes to [Listener.onIconSwipeUp] first (위로 쓸기 / 커버 폴더).
+ */
+class PagedView(ctx: Context) : HorizontalPager(ctx) {
+    interface Listener {
+        fun onPageChanged(page: Int)
+        fun onSwipeUp()
+        fun onSwipeDown()
+        fun onDoubleTap()
+        fun onEmptyLongPress(rawX: Float, rawY: Float)
+        /** A swipe up that began on [child]; true when the icon handled it. */
+        fun onIconSwipeUp(child: View?): Boolean = false
+        fun onPinchIn() {}
+        fun onPinchOut() {}
+    }
+
+    var listener: Listener? = null
+    private var mode = 0 // 0 undecided, 1 sideways, 2 up/down, 3 two-finger pinch, 4 pinch done (rest of the touch ignored)
+    /** The icon (or widget) under the finger when the touch began. */
+    private var downChild: View? = null
+    private var pinchStart = 0f
+    private var pinchNow = 0f
+
+    private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent): Boolean = true
+        override fun onDoubleTap(e: MotionEvent): Boolean { listener?.onDoubleTap(); return true }
+        override fun onLongPress(e: MotionEvent) { if (mode == 0) listener?.onEmptyLongPress(e.rawX, e.rawY) }
+    })
+
+    fun page(i: Int): CellLayout = getChildAt(i) as CellLayout
+
+    override fun onPageSelected(page: Int) { listener?.onPageChanged(page) }
+
+    override fun onSwiped(vx: Float, from: Int, to: Int) {
+        if (LauncherApp.debug) LauncherApp.dlog("page swipe: vx=${vx.toInt()} from $from to $to of $pageCount wrap=$wrap")
     }
 
     private fun childAt(x: Float, y: Float): View? {
         if (currentPage !in 0 until pageCount) return null
         val p = page(currentPage)
-        val lx = x + scrollX - p.left
-        val ly = y - p.top
-        for (i in p.childCount - 1 downTo 0) {
-            val c = p.getChildAt(i)
-            if (lx >= c.left && lx < c.right && ly >= c.top && ly < c.bottom) return c
-        }
-        return null
+        return p.childUnder(x + scrollX - p.left, y - p.top)
     }
 
     private fun span(ev: MotionEvent): Float =
@@ -219,9 +308,9 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
     }
 
     private fun decide(ev: MotionEvent): Boolean {
+        if (startsSideways(ev)) { mode = 1; return true }
         val dx = ev.x - downX
         val dy = ev.y - downY
-        if (abs(dx) > slop && abs(dx) > abs(dy)) { mode = 1; lastX = ev.x; return true }
         if (abs(dy) > slop * 2 && abs(dy) > abs(dx) * 1.2f) { mode = 2; return true }
         return false
     }
@@ -229,11 +318,9 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = ev.x; downY = ev.y; lastX = ev.x; mode = 0
+                mode = 0
                 downChild = childAt(ev.x, ev.y)
-                velocity?.clear()
-                track(ev)
-                if (!scroller.isFinished) { scroller.abortAnimation(); mode = 1; return true }
+                if (touchDown(ev)) { mode = 1; return true }
             }
             MotionEvent.ACTION_POINTER_DOWN -> if (mode == 0 || mode == 2) { startPinch(ev); return true }
             MotionEvent.ACTION_MOVE -> {
@@ -246,70 +333,44 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         gestures.onTouchEvent(ev)
-        track(ev)
+        if (ev.actionMasked != MotionEvent.ACTION_DOWN) track(ev)
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = ev.x; downY = ev.y; lastX = ev.x; mode = 0
+                mode = 0
                 downChild = childAt(ev.x, ev.y)
-                if (!scroller.isFinished) { scroller.abortAnimation(); mode = 1 }
+                if (touchDown(ev)) mode = 1
             }
             MotionEvent.ACTION_POINTER_DOWN -> if (mode == 0 || mode == 2) startPinch(ev)
-            MotionEvent.ACTION_POINTER_UP -> if (mode == 3) { endPinch(); mode = 4 } // the rest of this touch does nothing
+            MotionEvent.ACTION_POINTER_UP -> if (mode == 3) { endPinch(); mode = 4 }
             MotionEvent.ACTION_MOVE -> {
                 if (mode == 3) { if (ev.pointerCount >= 2) pinchNow = span(ev); return true }
                 if (mode == 4) return true
                 if (mode == 0) decide(ev)
-                if (mode == 1) {
-                    val dx = lastX - ev.x
-                    lastX = ev.x
-                    val edge = if (wrap && pageCount > 1) 0.45f else 0.2f
-                    val min = -width * edge
-                    val max = (pageCount - 1) * width + width * edge
-                    val nx = (scrollX + dx).coerceIn(min, max)
-                    scrollTo(nx.roundToInt(), 0)
-                }
+                if (mode == 1) dragTo(ev)
             }
             MotionEvent.ACTION_UP -> {
-                val v = velocity
-                v?.computeCurrentVelocity(1000)
-                val vx = v?.xVelocity ?: 0f
-                val vy = v?.yVelocity ?: 0f
-                if (mode == 1) {
-                    val fling = cfg.scaledMinimumFlingVelocity * 4
-                    // a quick flick, or a drag of 40% of the screen, turns the page (the flick speed can read 0 when the
-                    // finger rests a moment before lifting, so the distance counts on its own too). Past the last page
-                    // with 무한 스크롤 the pull stops at 45%, so 20% is enough there.
-                    val dragged = downX - ev.x
-                    val beyond = (dragged > 0 && currentPage == pageCount - 1) || (dragged < 0 && currentPage == 0)
-                    val need = width * if (wrap && beyond) 0.2f else 0.4f
-                    var target = when {
-                        vx > fling -> currentPage - 1
-                        vx < -fling -> currentPage + 1
-                        dragged > need -> currentPage + 1
-                        dragged < -need -> currentPage - 1
-                        else -> currentPage
+                when (mode) {
+                    1 -> release(ev, cancelled = false)
+                    2 -> {
+                        val vy = speed()[1]
+                        val dy = ev.y - downY
+                        val threshold = dpx(56f)
+                        if (dy < -threshold || vy < -1500f) {
+                            if (listener?.onIconSwipeUp(downChild) != true) listener?.onSwipeUp()
+                        } else if (dy > threshold || vy > 1500f) listener?.onSwipeDown()
                     }
-                    if (wrap && pageCount > 1) {
-                        if (target >= pageCount) target = 0 else if (target < 0) target = pageCount - 1
-                    }
-                    if (LauncherApp.debug) LauncherApp.dlog("page swipe: vx=${vx.toInt()} from $currentPage to $target of $pageCount wrap=$wrap")
-                    snapToPage(target)
-                } else if (mode == 2) {
-                    val dy = ev.y - downY
-                    val threshold = dpx(56f)
-                    if (dy < -threshold || vy < -1500f) {
-                        if (listener?.onIconSwipeUp(downChild) != true) listener?.onSwipeUp()
-                    } else if (dy > threshold || vy > 1500f) listener?.onSwipeDown()
-                } else if (mode == 3) endPinch()
+                    3 -> endPinch()
+                }
+                if (mode != 1) settle()
                 mode = 0
                 downChild = null
-                velocity?.recycle(); velocity = null
+                recycleVelocity()
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (mode == 1) snapToPage(((scrollX.toFloat() / maxOf(1, width))).roundToInt())
+                if (mode == 1) release(ev, cancelled = true) else settle()
                 mode = 0
                 downChild = null
-                velocity?.recycle(); velocity = null
+                recycleVelocity()
             }
         }
         return true

@@ -2,15 +2,12 @@ package com.anuki.launcher
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.os.Handler
-import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Toast
 import kotlin.math.hypot
 
 class DragInfo(val source: Int, val item: HomeItem?, val app: AppEntry?, val view: View) {
@@ -38,7 +35,6 @@ class DragController(private val act: HomeActivity) {
     private var offX = 0f
     private var offY = 0f
     private val slop = ViewConfiguration.get(act).scaledTouchSlop * 1.5f
-    private val handler = Handler(Looper.getMainLooper())
     private var edgeRunnable: Runnable? = null
     private var edgeDir = 0
 
@@ -204,11 +200,11 @@ class DragController(private val act: HomeActivity) {
             scheduleEdge(dir) // keep paging while the finger stays at the edge
         }
         edgeRunnable = r
-        handler.postDelayed(r, 650)
+        mainHandler.postDelayed(r, 650)
     }
 
     private fun cancelEdge() {
-        edgeRunnable?.let { handler.removeCallbacks(it) }
+        edgeRunnable?.let { mainHandler.removeCallbacks(it) }
         edgeRunnable = null
         edgeDir = 0
     }
@@ -283,7 +279,7 @@ class DragController(private val act: HomeActivity) {
         val pos = if (model.fits(g, t.x, t.y, dragged.spanX, dragged.spanY)) intArrayOf(t.x, t.y)
         else model.findVacant(t.container, t.screen, cols, rows, dragged.spanX, dragged.spanY, t.x, t.y, dragged)
         if (pos == null) {
-            Toast.makeText(act, "빈 자리가 없어요", Toast.LENGTH_SHORT).show()
+            act.toast("빈 자리가 없어요")
             return
         }
         dragged.container = t.container

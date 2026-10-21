@@ -12,8 +12,6 @@ import android.graphics.Paint
 import android.graphics.drawable.AnimatedImageDrawable
 import android.media.MediaPlayer
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import java.io.File
@@ -28,7 +26,6 @@ class AnukiWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = AnukiEngine()
 
     inner class AnukiEngine : Engine() {
-        private val handler = Handler(Looper.getMainLooper())
         private var built: String? = null
         private var player: MediaPlayer? = null
         private var anim: AnimatedImageDrawable? = null
@@ -111,18 +108,18 @@ class AnukiWallpaperService : WallpaperService() {
             try { player?.let { if (!it.isPlaying) it.start() } } catch (_: Exception) { }
             anim?.start()
             start = System.nanoTime() - (offset / speed() * 1e9f).toLong()
-            handler.removeCallbacks(frame)
+            mainHandler.removeCallbacks(frame)
             if (player == null) draw()
         }
 
         private fun pause() {
             try { player?.let { if (it.isPlaying) it.pause() } } catch (_: Exception) { }
             anim?.stop()
-            handler.removeCallbacks(frame)
+            mainHandler.removeCallbacks(frame)
         }
 
         private fun teardown() {
-            handler.removeCallbacks(frame)
+            mainHandler.removeCallbacks(frame)
             try { player?.release() } catch (_: Exception) { }
             player = null
             anim?.stop(); anim = null
@@ -159,8 +156,8 @@ class AnukiWallpaperService : WallpaperService() {
             } finally {
                 try { holder.unlockCanvasAndPost(c) } catch (_: Exception) { }
             }
-            handler.removeCallbacks(frame)
-            if (visible && (moving || anim != null)) handler.postDelayed(frame, 33)
+            mainHandler.removeCallbacks(frame)
+            if (visible && (moving || anim != null)) mainHandler.postDelayed(frame, 33)
         }
     }
 

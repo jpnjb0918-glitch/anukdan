@@ -8,7 +8,6 @@ import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.os.CancellationSignal
-import android.widget.Toast
 
 /**
  * 숨긴 앱 잠금 (Prefs.lockHidden): the hidden apps list and hidden apps in the drawer search need the phone's own
@@ -67,7 +66,7 @@ object HiddenLock {
         // Android 8: the system PIN / pattern screen
         val km = a.getSystemService(KeyguardManager::class.java)
         @Suppress("DEPRECATION") val i: Intent? = km?.createConfirmDeviceCredentialIntent(title, desc)
-        if (i == null) { Toast.makeText(a, "확인 화면을 열 수 없어요", Toast.LENGTH_SHORT).show(); return }
+        if (i == null) { a.toast("확인 화면을 열 수 없어요"); return }
         pending = onOpen
         @Suppress("DEPRECATION") a.startActivityForResult(i, REQ_CONFIRM)
     }

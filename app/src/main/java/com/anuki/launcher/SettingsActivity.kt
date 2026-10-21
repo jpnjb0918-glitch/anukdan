@@ -8,7 +8,6 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -16,7 +15,6 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,8 +37,6 @@ class SettingsActivity : Activity() {
         Updater.onResumed(this)
         build()
     }
-
-    private fun dp(v: Float) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun build() {
         scrollY = scroll?.scrollY ?: 0
@@ -88,7 +84,7 @@ class SettingsActivity : Activity() {
         }
         switch("숨긴 앱 잠금", "숨긴 앱 목록과 검색에 나오는 숨긴 앱을 휴대폰의 지문·얼굴·PIN으로 확인한 뒤에 보여줘요", prefs.lockHidden) { on ->
             if (on && !HiddenLock.deviceSecure(this)) {
-                Toast.makeText(this, "먼저 휴대폰 설정에서 화면 잠금(PIN·패턴·비밀번호)을 설정해 주세요", Toast.LENGTH_LONG).show()
+                this.toast("먼저 휴대폰 설정에서 화면 잠금(PIN·패턴·비밀번호)을 설정해 주세요", long = true)
                 build()
             } else if (on) {
                 HiddenLock.relock()
@@ -146,7 +142,7 @@ class SettingsActivity : Activity() {
                 .setSingleChoiceItems(opts.map { it.second }.toTypedArray(), opts.indexOfFirst { it.first == AppIcon.current(this) }.coerceAtLeast(0)) { d, which ->
                     d.dismiss()
                     AppIcon.set(this, opts[which].first)
-                    Toast.makeText(this, "앱 아이콘을 바꿨어요. 홈 화면에 반영되기까지 잠깐 걸릴 수 있어요.", Toast.LENGTH_LONG).show()
+                    this.toast("앱 아이콘을 바꿨어요. 홈 화면에 반영되기까지 잠깐 걸릴 수 있어요.", long = true)
                     build()
                 }.setNegativeButton("취소", null).show()
         }
@@ -194,7 +190,7 @@ class SettingsActivity : Activity() {
         switch("켤 때 새 버전 알림", "하루에 한 번 확인해요 · 업데이트 질문에서 '아니요'를 누르면 꺼져요", prefs.updateCheck) { prefs.updateCheck = it }
         action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
         action("날씨 정보", "아늑단 날씨 위젯: Open-Meteo.com (CC BY 4.0) · 지역을 고를 때만 인터넷·위치를 써요") {
-            try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://open-meteo.com/"))) } catch (_: Exception) { }
+            openUrl("https://open-meteo.com/")
         }
         action("글꼴 라이선스", "주아·개구·감자꽃·하이멜로디·나눔손글씨 펜·고운돋움 (SIL Open Font License)") { Dialogs.fontLicense(this) }
 
@@ -321,7 +317,7 @@ class SettingsActivity : Activity() {
         model.save()
         prefs.firstRunDone = false
         prefs.bump()
-        Toast.makeText(this, "홈 화면을 초기화했어요", Toast.LENGTH_SHORT).show()
+        this.toast("홈 화면을 초기화했어요")
     }
 
     @Deprecated("Deprecated in Java")
@@ -337,7 +333,7 @@ class SettingsActivity : Activity() {
             prefs.searchContacts = ok
             SearchExtras.forgetContacts()
             LauncherApp.dlog("contacts search ${if (ok) "on" else "refused"}")
-            if (!ok) Toast.makeText(this, "연락처 권한이 없어서 연락처 검색을 켜지 않았어요", Toast.LENGTH_SHORT).show()
+            if (!ok) this.toast("연락처 권한이 없어서 연락처 검색을 켜지 않았어요")
             build()
         }
     }
@@ -358,7 +354,7 @@ class SettingsActivity : Activity() {
                     contentResolver.openOutputStream(uri)?.use { it.write(o.toString(2).toByteArray()) }
                     true
                 } catch (_: Exception) { false }
-                Toast.makeText(this, if (ok) "백업 파일을 만들었어요" else "백업에 실패했어요", Toast.LENGTH_SHORT).show()
+                this.toast(if (ok) "백업 파일을 만들었어요" else "백업에 실패했어요")
             }
             REQ_RESTORE -> {
                 val ok = try {
@@ -375,7 +371,7 @@ class SettingsActivity : Activity() {
                     prefs.bump()
                     true
                 } catch (_: Exception) { false }
-                Toast.makeText(this, if (ok) "복원했어요" else "아늑이 런처 백업 파일이 아니거나 읽을 수 없어요", Toast.LENGTH_SHORT).show()
+                this.toast(if (ok) "복원했어요" else "아늑이 런처 백업 파일이 아니거나 읽을 수 없어요")
                 build()
             }
         }

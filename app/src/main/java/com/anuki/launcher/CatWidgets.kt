@@ -15,7 +15,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.BatteryManager
-import android.os.Build
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
@@ -249,6 +248,28 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
         return out
     }
 
+    private val boltPath = Path()
+    private val boltPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND }
+
+    /** Gold lightning bolt with the icons' outline, centred on (x, y), [s] tall from centre to tip. */
+    protected fun drawBolt(c: Canvas, x: Float, y: Float, s: Float) {
+        boltPath.reset()
+        boltPath.moveTo(x + 0.15f * s, y - s)
+        boltPath.lineTo(x - 0.55f * s, y + 0.12f * s)
+        boltPath.lineTo(x - 0.02f * s, y + 0.12f * s)
+        boltPath.lineTo(x - 0.18f * s, y + s)
+        boltPath.lineTo(x + 0.55f * s, y - 0.18f * s)
+        boltPath.lineTo(x + 0.02f * s, y - 0.18f * s)
+        boltPath.close()
+        boltPaint.style = Paint.Style.FILL
+        boltPaint.color = 0xFFE4B01C.toInt()
+        c.drawPath(boltPath, boltPaint)
+        boltPaint.style = Paint.Style.STROKE
+        boltPaint.color = INK
+        boltPaint.strokeWidth = max(dp(1f), s * 0.16f)
+        c.drawPath(boltPath, boltPaint)
+    }
+
     /** White (or [fill]) text with the icons' dark outline, centred on [x]. */
     protected fun outlined(c: Canvas, s: String, x: Float, y: Float, size: Float, fill: Int = Color.WHITE) {
         val tf = Fonts.regular(bold = true)
@@ -274,7 +295,7 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
         receiver = r
         // system broadcasts only (time tick, battery)
         val sticky = try {
-            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(r, f, Context.RECEIVER_EXPORTED) else context.registerReceiver(r, f)
+            context.registerSystemReceiver(r, f)
         } catch (e: Exception) { LauncherApp.dlog("widget receiver failed: $e"); null }
         sticky?.let { onBroadcast(it) }
         invalidate()
@@ -467,14 +488,12 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
     private val wave = Path()
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND }
     private val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXT; textAlign = Paint.Align.CENTER }
-    private val bolt = Path()
 
     init {
         // current state right away (also for the picture in the widget list)
         try {
             val f = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            val i = if (Build.VERSION.SDK_INT >= 33) ctx.registerReceiver(null, f, Context.RECEIVER_EXPORTED) else ctx.registerReceiver(null, f)
-            i?.let { read(it) }
+            ctx.registerSystemReceiver(null, f)?.let { read(it) }
         } catch (_: Exception) { }
     }
 
@@ -546,24 +565,6 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         if (charging) drawBolt(c, area.centerX() - sw / 2 - boltW * 0.4f, sy - small.textSize * 0.38f, small.textSize * 0.62f)
     }
 
-    /** Gold lightning bolt with the icons' outline, centred on (x, y), [s] tall from centre to tip. */
-    private fun drawBolt(c: Canvas, x: Float, y: Float, s: Float) {
-        bolt.reset()
-        bolt.moveTo(x + 0.15f * s, y - s)
-        bolt.lineTo(x - 0.55f * s, y + 0.12f * s)
-        bolt.lineTo(x - 0.02f * s, y + 0.12f * s)
-        bolt.lineTo(x - 0.18f * s, y + s)
-        bolt.lineTo(x + 0.55f * s, y - 0.18f * s)
-        bolt.lineTo(x + 0.02f * s, y - 0.18f * s)
-        bolt.close()
-        p.style = Paint.Style.FILL
-        p.color = 0xFFE4B01C.toInt()
-        c.drawPath(bolt, p)
-        p.style = Paint.Style.STROKE
-        p.color = INK
-        p.strokeWidth = max(dp(1f), s * 0.16f)
-        c.drawPath(bolt, p)
-    }
 }
 
 /** 검색창: a paper bar with the cat peeking over its left end; tapping opens the app search. */

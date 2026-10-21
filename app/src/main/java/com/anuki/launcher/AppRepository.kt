@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
-import android.os.Handler
-import android.os.Looper
 import android.os.UserHandle
 import android.os.UserManager
 import java.text.Collator
@@ -35,7 +33,6 @@ class AppEntry(val info: LauncherActivityInfo, val label: String, val serial: Lo
 class AppRepository(private val ctx: Context) {
     val launcherApps: LauncherApps = ctx.getSystemService(LauncherApps::class.java)
     val userManager: UserManager = ctx.getSystemService(UserManager::class.java)
-    private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private val listeners = ArrayList<() -> Unit>()
 
@@ -58,8 +55,8 @@ class AppRepository(private val ctx: Context) {
     /** Several apps often change in a row (Play Store updates): wait a moment and reload once for all of them. */
     private fun changedSoon(pkgs: Collection<String>) {
         for (p in pkgs) { changed += p; IconPacks.forget(p) }
-        main.removeCallbacks(reloadLater)
-        main.postDelayed(reloadLater, 300)
+        mainHandler.removeCallbacks(reloadLater)
+        mainHandler.postDelayed(reloadLater, 300)
     }
 
     private val callback = object : LauncherApps.Callback() {
@@ -79,14 +76,14 @@ class AppRepository(private val ctx: Context) {
     }
 
     init {
-        launcherApps.registerCallback(callback, main)
+        launcherApps.registerCallback(callback, mainHandler)
     }
 
     fun addListener(l: () -> Unit) { listeners += l }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
     fun reload(done: (() -> Unit)? = null) {
-        main.removeCallbacks(reloadLater)
+        mainHandler.removeCallbacks(reloadLater)
         // the first load has nothing cached yet; later ones only redraw what changed
         val what: Set<String>? = if (!loaded && changed.isEmpty()) null else HashSet(changed)
         changed.clear()
@@ -109,7 +106,7 @@ class AppRepository(private val ctx: Context) {
                 "builtin" -> LineIcons.names(ctx)
                 else -> IconPacks.get(ctx, mode)
             }
-            main.post {
+            mainHandler.post {
                 all = list
                 byKey = list.associateBy { it.key }
                 loaded = true

@@ -12,11 +12,8 @@ import android.provider.Settings
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.widget.Toast
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * New-version check against this project's GitHub releases.
@@ -65,18 +62,7 @@ object Updater {
 
     private fun isDebug(ctx: Context) = (ctx.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    private fun get(url: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10000
-        c.readTimeout = 10000
-        c.setRequestProperty("Accept", "application/vnd.github+json")
-        c.setRequestProperty("User-Agent", "anuki-launcher")
-        try {
-            return c.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            c.disconnect()
-        }
-    }
+    private fun get(url: String): String = Net.getText(url, mapOf("Accept" to "application/vnd.github+json"))
 
     /** First line of every commit between two release tags, newest first (works for releases made before notes existed). */
     private fun compareChanges(fromTag: String, toTag: String): List<String> = try {
@@ -146,7 +132,7 @@ object Updater {
         }
         val f = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
         // sent by the download manager (another app), so it has to be an exported receiver
-        if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(r, f, Context.RECEIVER_EXPORTED) else app.registerReceiver(r, f)
+        app.registerSystemReceiver(r, f)
     }
 
     private fun onDownloadFinished(ctx: Context, id: Long) {
@@ -161,7 +147,7 @@ object Updater {
         LauncherApp.dlog("update download $id finished ok=$ok edition=$edition")
         sp.edit().remove("update_download_id").apply()
         if (!ok) {
-            Toast.makeText(ctx, "업데이트 파일을 받지 못했어요", Toast.LENGTH_LONG).show()
+            ctx.toast("업데이트 파일을 받지 못했어요", long = true)
             return
         }
         if (edition != "standard") return
@@ -197,7 +183,7 @@ object Updater {
             )
         } catch (e: Exception) {
             LauncherApp.dlog("update install failed: $e")
-            Toast.makeText(a, "설치 화면을 열지 못했어요. 다운로드 완료 알림을 눌러 설치해 주세요.", Toast.LENGTH_LONG).show()
+            a.toast("설치 화면을 열지 못했어요. 다운로드 완료 알림을 눌러 설치해 주세요.", long = true)
         }
     }
 
@@ -208,28 +194,23 @@ object Updater {
         val now = System.currentTimeMillis()
         if (now - prefs.sp.getLong("update_last_check", 0L) < DAY) return
         prefs.sp.edit().putLong("update_last_check", now).apply()
-        Thread {
-            val r = fetch(currentNumber(a)) ?: return@Thread
-            if (r.number > currentNumber(a)) a.runOnUiThread { if (!a.isFinishing && !a.isDestroyed) ask(a, r, auto = true) }
-        }.start()
+        inBackground({ fetch(currentNumber(a)) }, alive = a) { r ->
+            if (r != null && r.number > currentNumber(a)) ask(a, r, auto = true)
+        }
     }
 
     /** 설정 → 업데이트 확인. */
     fun checkNow(a: Activity) {
-        Toast.makeText(a, "새 버전을 확인하는 중…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val r = fetch(currentNumber(a))
-            a.runOnUiThread {
-                if (a.isFinishing || a.isDestroyed) return@runOnUiThread
-                val cur = currentNumber(a)
-                LauncherApp.dlog("update: current $cur, latest ${r?.number}")
-                when {
-                    r == null -> Toast.makeText(a, "확인하지 못했어요. 인터넷 연결을 확인해 주세요.", Toast.LENGTH_LONG).show()
-                    r.number > cur -> ask(a, r, auto = false)
-                    else -> Toast.makeText(a, "최신 버전이에요 (${r.tag})", Toast.LENGTH_LONG).show()
-                }
+        a.toast("새 버전을 확인하는 중…")
+        inBackground({ fetch(currentNumber(a)) }, alive = a) { r ->
+            val cur = currentNumber(a)
+            LauncherApp.dlog("update: current $cur, latest ${r?.number}")
+            when {
+                r == null -> a.toast("확인하지 못했어요. 인터넷 연결을 확인해 주세요.", long = true)
+                r.number > cur -> ask(a, r, auto = false)
+                else -> a.toast("최신 버전이에요 (${r.tag})", long = true)
             }
-        }.start()
+        }
     }
 
     private fun ask(a: Activity, r: Release, auto: Boolean) {
@@ -239,10 +220,7 @@ object Updater {
             .setNegativeButton("아니요") { _, _ ->
                 // "아니요" turns the automatic question off; checking by hand stays available
                 LauncherApp.instance.prefs.updateCheck = false
-                Toast.makeText(
-                    a, "새 버전 알림을 껐어요. 설정 → 업데이트 확인에서 직접 확인하고, '켤 때 새 버전 알림'으로 다시 켤 수 있어요.",
-                    Toast.LENGTH_LONG,
-                ).show()
+                a.toast("새 버전 알림을 껐어요. 설정 → 업데이트 확인에서 직접 확인하고, '켤 때 새 버전 알림'으로 다시 켤 수 있어요.", long = true)
                 LauncherApp.dlog("update: declined (auto=$auto), automatic check off")
             }
             .show()
@@ -307,7 +285,7 @@ object Updater {
 
     private fun download(a: Activity, r: Release, url: String?, file: String, edition: String, kind: String) {
         if (url.isNullOrEmpty()) {
-            Toast.makeText(a, "이 버전에는 $edition 파일이 없어요", Toast.LENGTH_LONG).show()
+            a.toast("이 버전에는 $edition 파일이 없어요", long = true)
             return
         }
         try {
@@ -326,7 +304,7 @@ object Updater {
         } catch (e: Exception) {
             LauncherApp.dlog("update download failed: $e")
             // fall back to the browser
-            try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) { }
+            a.openUrl(url)
         }
     }
 
@@ -342,6 +320,6 @@ object Updater {
         for (i in tries) {
             try { a.startActivity(i); return } catch (_: Exception) { }
         }
-        Toast.makeText(a, "Play 스토어 앱에서 직접 열어 주세요", Toast.LENGTH_SHORT).show()
+        a.toast("Play 스토어 앱에서 직접 열어 주세요")
     }
 }

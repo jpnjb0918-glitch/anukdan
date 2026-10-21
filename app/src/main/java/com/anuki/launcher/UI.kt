@@ -25,10 +25,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import kotlin.math.abs
 
-fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 
 object Palette {
     fun isDark(ctx: Context): Boolean = when (LauncherApp.instance.prefs.theme) {
@@ -242,95 +240,28 @@ class FolderView(private val act: HomeActivity) : FrameLayout(act) {
 
 /** Full-screen app drawer: search (with 초성), tabs, alphabetical grid. Swipe down at the top to close. */
 /** Horizontal pages for the "가로 페이지" drawer: swipe left/right, snaps to a page. */
-class DrawerPager(ctx: Context) : ViewGroup(ctx) {
+class DrawerPager(ctx: Context) : HorizontalPager(ctx) {
     var onPageChanged: ((Int) -> Unit)? = null
-    var currentPage = 0
-        private set
-    private val scroller = android.widget.Scroller(ctx)
-    private var velocity: android.view.VelocityTracker? = null
-    private val cfg = ViewConfiguration.get(ctx)
-    private var downX = 0f
-    private var downY = 0f
-    private var lastX = 0f
-    private var horizontal = false
+    override val snapMillis = 260
 
-    val pageCount: Int get() = childCount
+    override fun onPageSelected(page: Int) { onPageChanged?.invoke(page) }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = MeasureSpec.getSize(heightMeasureSpec)
-        setMeasuredDimension(w, h)
-        for (i in 0 until childCount) {
-            getChildAt(i).measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
-        }
-    }
-
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val w = r - l
-        for (i in 0 until childCount) getChildAt(i).layout(i * w, 0, (i + 1) * w, b - t)
-        if (scroller.isFinished) scrollTo(currentPage * w, 0)
-    }
-
-    override fun computeScroll() {
-        if (scroller.computeScrollOffset()) { scrollTo(scroller.currX, 0); postInvalidateOnAnimation() }
-    }
-
-    fun snapTo(p: Int, animate: Boolean = true) {
-        val target = p.coerceIn(0, maxOf(0, pageCount - 1))
-        if (!scroller.isFinished) scroller.abortAnimation()
-        val dx = target * width - scrollX
-        if (animate && width > 0) scroller.startScroll(scrollX, 0, dx, 0, 260) else scrollTo(target * width, 0)
-        if (target != currentPage) { currentPage = target; onPageChanged?.invoke(target) }
-        invalidate()
-    }
-
-    private fun track(ev: MotionEvent) {
-        (velocity ?: android.view.VelocityTracker.obtain().also { velocity = it }).addMovement(ev)
-    }
+    fun snapTo(p: Int, animate: Boolean = true) = snapToPage(p, animate)
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downX = ev.x; downY = ev.y; lastX = ev.x; horizontal = false
-                velocity?.clear(); track(ev)
-                if (!scroller.isFinished) { scroller.abortAnimation(); horizontal = true; return true }
-            }
-            MotionEvent.ACTION_MOVE -> {
-                track(ev)
-                val dx = ev.x - downX; val dy = ev.y - downY
-                if (abs(dx) > cfg.scaledTouchSlop && abs(dx) > abs(dy)) { horizontal = true; lastX = ev.x; return true }
-            }
+            MotionEvent.ACTION_DOWN -> if (touchDown(ev)) return true
+            MotionEvent.ACTION_MOVE -> { track(ev); if (startsSideways(ev)) return true }
         }
         return false
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        track(ev)
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = ev.x; lastX = ev.x; if (!scroller.isFinished) scroller.abortAnimation() }
-            MotionEvent.ACTION_MOVE -> {
-                val dx = lastX - ev.x
-                lastX = ev.x
-                val nx = (scrollX + dx).coerceIn(-width * 0.2f, (pageCount - 1) * width + width * 0.2f)
-                scrollTo(nx.toInt(), 0)
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val v = velocity
-                v?.computeCurrentVelocity(1000)
-                val vx = v?.xVelocity ?: 0f
-                val fling = cfg.scaledMinimumFlingVelocity * 4
-                val dragged = downX - ev.x
-                val up = ev.actionMasked == MotionEvent.ACTION_UP
-                val target = when {
-                    up && vx > fling -> currentPage - 1
-                    up && vx < -fling -> currentPage + 1
-                    up && dragged > width * 0.4f -> currentPage + 1
-                    up && dragged < -width * 0.4f -> currentPage - 1
-                    else -> Math.round(scrollX.toFloat() / maxOf(1, width))
-                }
-                snapTo(target)
-                velocity?.recycle(); velocity = null
-            }
+            MotionEvent.ACTION_DOWN -> touchDown(ev)
+            MotionEvent.ACTION_MOVE -> { track(ev); dragTo(ev) }
+            MotionEvent.ACTION_UP -> { track(ev); release(ev, cancelled = false) }
+            MotionEvent.ACTION_CANCEL -> release(ev, cancelled = true)
         }
         return true
     }
@@ -636,22 +567,17 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         if (q.isEmpty()) { extras.visibility = GONE; return }
         SearchExtras.calculate(q)?.let { r ->
             extraRow("＝", "$r", "계산 결과 · 눌러서 복사", "계산: $r") {
-                val cm = act.getSystemService(android.content.ClipboardManager::class.java)
-                cm?.setPrimaryClip(android.content.ClipData.newPlainText("계산", r.replace(",", "")))
-                Toast.makeText(act, "$r 을(를) 복사했어요", Toast.LENGTH_SHORT).show()
+                act.copyText("계산", r.replace(",", ""))
             }
         }
         SearchExtras.convert(q)?.let { r ->
             extraRow("⇄", r, "단위 변환 · 눌러서 복사", "단위 변환: $r") {
-                val v = r.substringAfter("= ").substringBefore(" ·")
-                val cm = act.getSystemService(android.content.ClipboardManager::class.java)
-                cm?.setPrimaryClip(android.content.ClipData.newPlainText("단위 변환", v))
-                Toast.makeText(act, "$v 을(를) 복사했어요", Toast.LENGTH_SHORT).show()
+                act.copyText("단위 변환", r.substringAfter("= ").substringBefore(" ·"))
             }
         }
         for (c in SearchExtras.findContacts(q)) {
             extraRow("☎", c.name, "연락처", "연락처: ${c.name}") {
-                try { act.startActivity(Intent(Intent.ACTION_VIEW, c.uri)) } catch (_: Exception) { Toast.makeText(act, "연락처를 열 수 없어요", Toast.LENGTH_SHORT).show() }
+                try { act.startActivity(Intent(Intent.ACTION_VIEW, c.uri)) } catch (_: Exception) { act.toast("연락처를 열 수 없어요") }
             }
         }
         if (act.prefs.lockHidden && act.prefs.hidden.isNotEmpty() && !HiddenLock.isOpen()) {
@@ -688,7 +614,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     }
 
     private fun webSearch(q: String) {
-        if (!WebSearch.open(act, q)) Toast.makeText(act, "검색할 앱이 없어요", Toast.LENGTH_SHORT).show()
+        if (!WebSearch.open(act, q)) act.toast("검색할 앱이 없어요")
     }
 
     private fun fillPages(list: List<AppEntry>) {

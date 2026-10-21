@@ -28,7 +28,6 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -93,7 +92,7 @@ class HomeActivity : Activity(), PagedView.Listener {
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
         }
         // these are protected broadcasts only the system can send
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(dateReceiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(dateReceiver, f)
+        registerSystemReceiver(dateReceiver, f)
         if (Build.VERSION.SDK_INT >= 27) {
             try { android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener(wallpaperColors, android.os.Handler(mainLooper)) } catch (_: Exception) { }
         }
@@ -233,10 +232,6 @@ class HomeActivity : Activity(), PagedView.Listener {
         }
         dragLayer.requestApplyInsets()
     }
-
-    fun dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
-
-    private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 
     // ------------------------------------------------------------ binding
 
@@ -1000,17 +995,14 @@ class HomeActivity : Activity(), PagedView.Listener {
         val key = pendingIconKey ?: return
         Dialogs.photoStyle(this) { style ->
             toast("아이콘을 만드는 중…")
-            Thread {
-                val name = CustomIcons.create(this, uri, style)
-                runOnUiThread {
-                    if (name == null) { toast("사진을 읽지 못했어요"); return@runOnUiThread }
-                    prefs.setIconOverride(key, IconProvider.FILE + name)
-                    icons.invalidate()
-                    bindAll()
-                    if (drawer.isOpen) drawer.refresh()
-                    toast("사진 아이콘으로 바꿨어요")
-                }
-            }.start()
+            inBackground({ CustomIcons.create(this, uri, style) }, alive = this) { name ->
+                if (name == null) { toast("사진을 읽지 못했어요"); return@inBackground }
+                prefs.setIconOverride(key, IconProvider.FILE + name)
+                icons.invalidate()
+                bindAll()
+                if (drawer.isOpen) drawer.refresh()
+                toast("사진 아이콘으로 바꿨어요")
+            }
         }
     }
 
@@ -1146,12 +1138,7 @@ class SwipeFrame(
 
     private fun childAt(x: Float, y: Float): View? {
         val g = getChildAt(0) as? ViewGroup ?: return null
-        val lx = x - g.left; val ly = y - g.top
-        for (i in g.childCount - 1 downTo 0) {
-            val c = g.getChildAt(i)
-            if (lx >= c.left && lx < c.right && ly >= c.top && ly < c.bottom) return c
-        }
-        return null
+        return g.childUnder(x - g.left, y - g.top)
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {

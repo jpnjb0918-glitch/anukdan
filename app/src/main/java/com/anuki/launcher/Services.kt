@@ -7,8 +7,6 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
@@ -22,13 +20,12 @@ import kotlin.math.hypot
 // ---------------------------------------------------------------- notification badges
 
 object Badges {
-    private val main = Handler(Looper.getMainLooper())
     @Volatile var counts: Map<String, Int> = emptyMap()
         private set
     val listeners = ArrayList<() -> Unit>()
 
     fun update(m: Map<String, Int>) {
-        main.post {
+        mainHandler.post {
             counts = m
             for (l in listeners.toList()) l()
         }
@@ -94,7 +91,6 @@ class AnukiWidgetView(ctx: Context) : AppWidgetHostView(ctx) {
     private var downX = 0f
     private var downY = 0f
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
-    private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         onLongPress?.invoke(this)
@@ -105,10 +101,10 @@ class AnukiWidgetView(ctx: Context) : AppWidgetHostView(ctx) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = ev.rawX; downY = ev.rawY
-                handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
+                mainHandler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             }
-            MotionEvent.ACTION_MOVE -> if (hypot(ev.rawX - downX, ev.rawY - downY) > slop) handler.removeCallbacks(longPress)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(longPress)
+            MotionEvent.ACTION_MOVE -> if (hypot(ev.rawX - downX, ev.rawY - downY) > slop) mainHandler.removeCallbacks(longPress)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> mainHandler.removeCallbacks(longPress)
         }
         return false
     }
@@ -117,14 +113,14 @@ class AnukiWidgetView(ctx: Context) : AppWidgetHostView(ctx) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         lastRawX = event.rawX; lastRawY = event.rawY
         when (event.actionMasked) {
-            MotionEvent.ACTION_MOVE -> if (hypot(event.rawX - downX, event.rawY - downY) > slop) handler.removeCallbacks(longPress)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(longPress)
+            MotionEvent.ACTION_MOVE -> if (hypot(event.rawX - downX, event.rawY - downY) > slop) mainHandler.removeCallbacks(longPress)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> mainHandler.removeCallbacks(longPress)
         }
         return true
     }
 
     override fun onDetachedFromWindow() {
-        handler.removeCallbacks(longPress)
+        mainHandler.removeCallbacks(longPress)
         super.onDetachedFromWindow()
     }
 }

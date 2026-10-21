@@ -6,8 +6,6 @@ import android.app.WallpaperManager
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -17,10 +15,8 @@ import android.widget.GridView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 
 object Dialogs {
-    private val main = Handler(Looper.getMainLooper())
 
     // ------------------------------------------------------------ gestures
     val ACTIONS = listOf(
@@ -113,11 +109,11 @@ object Dialogs {
                 when (which) {
                     0 -> askText(a, "도시 이름 (예: 서울, 부산, 제주)", "") { q ->
                         if (q.isBlank()) return@askText
-                        Toast.makeText(a, "'$q' 찾는 중…", Toast.LENGTH_SHORT).show()
+                        a.toast("'$q' 찾는 중…")
                         Weather.search(q) { list ->
                             when {
-                                list == null -> Toast.makeText(a, "인터넷에 연결되지 않아 찾지 못했어요", Toast.LENGTH_SHORT).show()
-                                list.isEmpty() -> Toast.makeText(a, "'$q'(이)라는 곳을 찾지 못했어요", Toast.LENGTH_SHORT).show()
+                                list == null -> a.toast("인터넷에 연결되지 않아 찾지 못했어요")
+                                list.isEmpty() -> a.toast("'$q'(이)라는 곳을 찾지 못했어요")
                                 else -> AlertDialog.Builder(a).setTitle("'$q' 검색 결과")
                                     .setItems(list.map { p -> p.name + if (p.sub.isNotEmpty()) " · " + p.sub else "" }.toTypedArray()) { _, i -> onPlace(list[i]) }
                                     .setNegativeButton("취소", null).show()
@@ -125,9 +121,7 @@ object Dialogs {
                         }
                     }
                     1 -> onCurrent()
-                    2 -> try {
-                        a.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://open-meteo.com/")))
-                    } catch (_: Exception) { }
+                    2 -> a.openUrl("https://open-meteo.com/")
                 }
             }
             .setNegativeButton("취소", null).show()
@@ -289,17 +283,9 @@ object Dialogs {
         if (packs.isNotEmpty()) options += OPT_PACK
         options += icons.catNames
         val size = a.dp(48f)
-        val grid = GridView(a).apply {
-            numColumns = 5
-            verticalSpacing = a.dp(10f)
-            setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(12f))
-        }
+        val grid = pickGrid(a, 5)
         var dialog: AlertDialog? = null
-        grid.adapter = object : BaseAdapter() {
-            override fun getCount() = options.size
-            override fun getItem(position: Int) = options[position]
-            override fun getItemId(position: Int) = position.toLong()
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+        grid.adapter = cells({ options.size }) { position, _ ->
                 val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
                 val iv = ImageView(a)
                 val o = options[position]
@@ -325,8 +311,7 @@ object Dialogs {
                 col.contentDescription = if (label.isNotEmpty()) "아이콘 선택: $label" else "아늑단 아이콘: $o"
                 col.addView(iv, LinearLayout.LayoutParams(size, size))
                 col.addView(TextView(a).apply { text = label; textSize = 11f; gravity = Gravity.CENTER })
-                return col
-            }
+                col
         }
         grid.setOnItemClickListener { _, _, position, _ ->
             dialog?.dismiss()
@@ -363,20 +348,17 @@ object Dialogs {
     /** Runs [work] off the main thread behind a small "loading" dialog (big packs take a moment to read). */
     private fun <T> loading(a: Activity, work: () -> T?, then: (T?) -> Unit) {
         val d = AlertDialog.Builder(a).setMessage("아이콘 팩 불러오는 중…").setCancelable(false).show()
-        Thread {
-            val r = try { work() } catch (_: Exception) { null }
-            a.runOnUiThread {
-                try { d.dismiss() } catch (_: Exception) { }
-                if (!a.isFinishing && !a.isDestroyed) then(r)
-            }
-        }.start()
+        inBackground({ try { work() } catch (_: Exception) { null } }) { r ->
+            try { d.dismiss() } catch (_: Exception) { }
+            if (!a.isFinishing && !a.isDestroyed) then(r)
+        }
     }
 
     private fun packIconGrid(a: Activity, app: AppEntry, info: IconPackInfo, onDone: () -> Unit) {
         loading(a, {
             IconPacks.get(a, info.packageName)?.let { it to it.allIconNames() }
         }) { r ->
-            if (r == null) Toast.makeText(a, "아이콘 팩을 읽을 수 없어요", Toast.LENGTH_SHORT).show()
+            if (r == null) a.toast("아이콘 팩을 읽을 수 없어요")
             else showPackGrid(a, app, info, r.first, r.second, onDone)
         }
     }
@@ -385,7 +367,7 @@ object Dialogs {
         val density = a.resources.displayMetrics.densityDpi
         searchGrid(a, "${info.label} (${all.size}개)", all, { iv, name -> iv.setImageDrawable(pack.drawable(name, density)) }) { name ->
             if (pack.drawableId(name) == 0) {
-                Toast.makeText(a, "이 아이콘은 팩 안에 그림이 없어요", Toast.LENGTH_SHORT).show()
+                a.toast("이 아이콘은 팩 안에 그림이 없어요")
                 false
             } else {
                 LauncherApp.instance.prefs.setIconOverride(app.key, IconProvider.PACK + info.packageName + ":" + name)
@@ -421,24 +403,15 @@ object Dialogs {
         column.addView(filter, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             setMargins(a.dp(16f), a.dp(8f), a.dp(16f), 0)
         })
-        val grid = GridView(a).apply {
-            numColumns = 5
-            verticalSpacing = a.dp(10f)
-            setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(12f))
-        }
-        val adapter = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(position: Int) = shown[position]
-            override fun getItemId(position: Int) = position.toLong()
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                val iv = (convertView as? ImageView) ?: ImageView(a).apply {
-                    layoutParams = android.widget.AbsListView.LayoutParams(size, size)
-                }
-                val name = shown[position]
-                bind(iv, name)
-                iv.contentDescription = name
-                return iv
+        val grid = pickGrid(a, 5)
+        val adapter = cells({ shown.size }) { position, convertView ->
+            val iv = (convertView as? ImageView) ?: ImageView(a).apply {
+                layoutParams = android.widget.AbsListView.LayoutParams(size, size)
             }
+            val name = shown[position]
+            bind(iv, name)
+            iv.contentDescription = name
+            iv
         }
         grid.adapter = adapter
         column.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, a.dp(420f)))
@@ -456,6 +429,21 @@ object Dialogs {
             if (pick(shown[position])) dialog?.dismiss()
         }
         dialog = AlertDialog.Builder(a).setTitle(title).setView(column).setNegativeButton("취소", null).show()
+    }
+
+    /** The icon / colour grids in these dialogs all share this look. */
+    private fun pickGrid(a: Activity, columns: Int, spacing: Float = 10f, bottom: Float = 12f) = GridView(a).apply {
+        numColumns = columns
+        verticalSpacing = a.dp(spacing)
+        setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(bottom))
+    }
+
+    /** A grid/list adapter from a live count and a cell builder ([view] gets the position and a view to reuse). */
+    private fun cells(count: () -> Int, view: (Int, View?) -> View) = object : BaseAdapter() {
+        override fun getCount() = count()
+        override fun getItem(position: Int): Any = position
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?) = view(position, convertView)
     }
 
     /** A small colour wheel for the "색 바꾸기" cell. */
@@ -477,17 +465,9 @@ object Dialogs {
         options += IconColors.PRESETS.map { (c, n) -> (c as Int?) to n }
         // the whole set can follow the wallpaper (not one app on its own)
         if (!allowFollow && Build.VERSION.SDK_INT >= 27) options += (IconColors.WALLPAPER as Int?) to "배경화면 색 따르기"
-        val grid = GridView(a).apply {
-            numColumns = 4
-            verticalSpacing = a.dp(12f)
-            setPadding(a.dp(12f), a.dp(12f), a.dp(12f), a.dp(4f))
-        }
+        val grid = pickGrid(a, 4, spacing = 12f, bottom = 4f)
         var dialog: AlertDialog? = null
-        grid.adapter = object : BaseAdapter() {
-            override fun getCount() = options.size
-            override fun getItem(position: Int) = options[position]
-            override fun getItemId(position: Int) = position.toLong()
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+        grid.adapter = cells({ options.size }) { position, _ ->
                 val (c, name) = options[position]
                 val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
                 val iv = ImageView(a)
@@ -497,8 +477,7 @@ object Dialogs {
                 col.addView(iv, LinearLayout.LayoutParams(a.dp(52f), a.dp(52f)))
                 col.addView(TextView(a).apply { text = name; textSize = 11f; gravity = Gravity.CENTER; maxLines = 2 })
                 col.contentDescription = "아이콘 색: $name"
-                return col
-            }
+                col
         }
         grid.setOnItemClickListener { _, _, position, _ ->
             dialog?.dismiss()
@@ -721,7 +700,7 @@ object Dialogs {
         AlertDialog.Builder(a).setTitle("아이콘 그림 라이선스").setMessage(text)
             .setPositiveButton("확인", null)
             .setNeutralButton("Arcticons 열기") { _, _ ->
-                try { a.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Arcticons-Team/Arcticons"))) } catch (_: Exception) { }
+                a.openUrl("https://github.com/Arcticons-Team/Arcticons")
             }.show()
     }
 
@@ -788,18 +767,18 @@ object Dialogs {
         })
         option("아늑단 패턴 흐르기") {
             MovingWallpaper.set(MovingWallpaper.PATTERN, a)
-            Toast.makeText(a, "움직이는 배경을 켰어요. 홈 화면에서 보여요.", Toast.LENGTH_SHORT).show()
+            a.toast("움직이는 배경을 켰어요. 홈 화면에서 보여요.")
         }
         option("내 동영상·GIF 고르기") { MovingWallpaper.pick(a) }
         option("휴대폰 배경화면으로 설정 (잠금 화면 포함)") {
             if (prefs.movingBg.isEmpty()) MovingWallpaper.set(MovingWallpaper.PATTERN, a)
-            Toast.makeText(a, "다음 화면에서 '배경화면 설정'을 누르고, 고를 수 있으면 '홈 화면 및 잠금 화면'을 고르세요", Toast.LENGTH_LONG).show()
-            if (!AnukiWallpaperService.openSystemPreview(a)) Toast.makeText(a, "이 휴대폰에서는 배경화면 설정 화면을 열 수 없어요", Toast.LENGTH_SHORT).show()
+            a.toast("다음 화면에서 '배경화면 설정'을 누르고, 고를 수 있으면 '홈 화면 및 잠금 화면'을 고르세요", long = true)
+            if (!AnukiWallpaperService.openSystemPreview(a)) a.toast("이 휴대폰에서는 배경화면 설정 화면을 열 수 없어요")
         }
         option("움직이는 배경 끄기", enabled = prefs.movingBg.isNotEmpty()) {
             MovingWallpaper.set("", a)
             val msg = if (AnukiWallpaperService.isActive(a)) "움직임을 껐어요. 휴대폰 배경화면은 멈춘 아늑단 패턴으로 남아요." else "움직이는 배경을 껐어요"
-            Toast.makeText(a, msg, Toast.LENGTH_LONG).show()
+            a.toast(msg, long = true)
         }
         dialog = AlertDialog.Builder(a).setTitle("배경화면").setView(android.widget.ScrollView(a).apply { addView(box) })
             .setNeutralButton("다른 사진 고르기") { _, _ ->
@@ -814,18 +793,17 @@ object Dialogs {
         AlertDialog.Builder(a).setTitle("어디에 적용할까요?")
             .setItems(arrayOf("홈 화면", "홈 화면 + 잠금 화면")) { _, which ->
                 val flags = if (which == 0) WallpaperManager.FLAG_SYSTEM else WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-                Toast.makeText(a, "배경화면을 바꾸는 중…", Toast.LENGTH_SHORT).show()
-                Thread {
-                    val ok = try {
+                a.toast("배경화면을 바꾸는 중…")
+                inBackground({
+                    try {
                         a.assets.open(path).use { WallpaperManager.getInstance(a).setStream(it, null, true, flags) }
                         true
                     } catch (_: Exception) { false }
-                    main.post {
-                        // the still picture only shows once the moving background is off
-                        if (ok && LauncherApp.instance.prefs.movingBg.isNotEmpty()) MovingWallpaper.set("", a)
-                        Toast.makeText(a, if (ok) "배경화면을 바꿨어요" else "배경화면을 바꾸지 못했어요", Toast.LENGTH_SHORT).show()
-                    }
-                }.start()
+                }) { ok ->
+                    // the still picture only shows once the moving background is off
+                    if (ok && LauncherApp.instance.prefs.movingBg.isNotEmpty()) MovingWallpaper.set("", a)
+                    a.toast(if (ok) "배경화면을 바꿨어요" else "배경화면을 바꾸지 못했어요")
+                }
             }.show()
     }
 
@@ -867,8 +845,8 @@ object Dialogs {
             addView(btn("＋", plus), LinearLayout.LayoutParams(a.dp(56f), a.dp(44f)))
             setPadding(0, a.dp(6f), 0, a.dp(6f))
         }
-        rows.addView(pair("가로", { if (sx > 1) sx-- }, { if (fits(sx + 1, sy)) sx++ else Toast.makeText(a, "자리가 부족해요", Toast.LENGTH_SHORT).show() }))
-        rows.addView(pair("세로", { if (sy > 1) sy-- }, { if (fits(sx, sy + 1)) sy++ else Toast.makeText(a, "자리가 부족해요", Toast.LENGTH_SHORT).show() }))
+        rows.addView(pair("가로", { if (sx > 1) sx-- }, { if (fits(sx + 1, sy)) sx++ else a.toast("자리가 부족해요") }))
+        rows.addView(pair("세로", { if (sy > 1) sy-- }, { if (fits(sx, sy + 1)) sy++ else a.toast("자리가 부족해요") }))
         AlertDialog.Builder(a).setTitle("위젯 크기").setView(rows)
             .setPositiveButton("적용") { _, _ -> item.spanX = sx; item.spanY = sy; onDone() }
             .setNegativeButton("취소", null).show()

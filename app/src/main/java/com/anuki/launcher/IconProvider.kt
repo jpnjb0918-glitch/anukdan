@@ -8,14 +8,11 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
@@ -36,6 +33,12 @@ class IconProvider(private val ctx: Context) {
     private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
+
+    /**
+     * Folder and cover pictures, so a rebind (any setting change, returning home) doesn't redraw every folder.
+     * The key holds each mini icon's identity, so a redrawn app icon makes a new folder picture.
+     */
+    private val folderCache = LruCache<String, Bitmap>(48)
 
     /** package name -> cat icon name */
     @Volatile private var autoMap: Map<String, String> = emptyMap()
@@ -59,12 +62,12 @@ class IconProvider(private val ctx: Context) {
         cacheDay = today()
         generation++
         cache.evictAll()
+        folderCache.evictAll()
     }
 
     // ---- icons drawn off the main thread
     /** Bumped whenever the cache is reset, so work started before a reset can't put old pictures back. */
     @Volatile private var generation = 0
-    private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newFixedThreadPool(2) { r ->
         Thread(r, "anuki-icons").apply { priority = Thread.NORM_PRIORITY - 1; isDaemon = true }
     }
@@ -100,7 +103,7 @@ class IconProvider(private val ctx: Context) {
         worker.execute {
             val bmp = if (gen == generation) try { appIcon(app, size) } catch (_: Throwable) { null } else null
             val callbacks = synchronized(pending) { pending.remove(pk) } ?: return@execute
-            if (bmp != null && gen == generation) main.post { if (gen == generation) for (cb in callbacks) cb(bmp) }
+            if (bmp != null && gen == generation) mainHandler.post { if (gen == generation) for (cb in callbacks) cb(bmp) }
         }
         return null
     }
@@ -274,6 +277,13 @@ class IconProvider(private val ctx: Context) {
 
     /** Folder picture with up to three mini icons; minis not drawn yet are left out (see [folderIconMissing]). */
     fun folderIcon(color: String, contents: List<AppEntry>, size: Int): Bitmap {
+        val minis = contents.take(3).map { cache.get(it.key + "@" + homeSize()) }
+        val key = "f|$color|$size|${IconColors.current()}|" + minis.joinToString(",") { System.identityHashCode(it).toString() }
+        folderCache.get(key)?.let { return it }
+        return drawFolderIcon(color, minis, size).also { folderCache.put(key, it) }
+    }
+
+    private fun drawFolderIcon(color: String, minis: List<Bitmap?>, size: Int): Bitmap {
         // the default (teal) folder follows the icon colour; pink / gold / navy folders keep theirs
         val base = (if (color == "teal") catAsset("folder", IconColors.current()) else asset(folderAsset(color))) ?: asset("folder")
         val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -284,9 +294,9 @@ class IconProvider(private val ctx: Context) {
         val mini = (size * 0.21f)
         val cy = size * 0.655f
         val xs = floatArrayOf(0.28f, 0.5f, 0.72f)
-        for ((i, app) in contents.take(3).withIndex()) {
+        for ((i, icon) in minis.withIndex()) {
             // shrink the full-size icon (drawn in the background, never here on the main thread)
-            val icon = cache.get(app.key + "@" + homeSize()) ?: continue
+            if (icon == null) continue
             val cx = size * xs[i]
             c.drawBitmap(icon, null, RectF(cx - mini / 2, cy - mini / 2, cx + mini / 2, cy + mini / 2), paint)
         }
@@ -298,6 +308,12 @@ class IconProvider(private val ctx: Context) {
      * so it still reads as a folder.
      */
     fun coverIcon(first: Bitmap, count: Int): Bitmap {
+        val key = "c|${System.identityHashCode(first)}|$count|${IconColors.current()}"
+        folderCache.get(key)?.let { return it }
+        return drawCoverIcon(first, count).also { folderCache.put(key, it) }
+    }
+
+    private fun drawCoverIcon(first: Bitmap, count: Int): Bitmap {
         val size = first.width
         val b = first.copy(Bitmap.Config.ARGB_8888, true)
         val c = Canvas(b)

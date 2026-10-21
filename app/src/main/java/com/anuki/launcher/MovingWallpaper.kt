@@ -18,7 +18,6 @@ import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Toast
 import java.io.File
 
 /**
@@ -54,7 +53,7 @@ object MovingWallpaper {
         try {
             @Suppress("DEPRECATION") a.startActivityForResult(i, REQ_PICK)
         } catch (_: Exception) {
-            Toast.makeText(a, "파일을 고를 수 있는 앱이 없어요", Toast.LENGTH_SHORT).show()
+            a.toast("파일을 고를 수 있는 앱이 없어요")
         }
     }
 
@@ -67,32 +66,31 @@ object MovingWallpaper {
             else -> null
         }
         if (kind == null) {
-            Toast.makeText(a, "동영상이나 GIF 파일만 쓸 수 있어요", Toast.LENGTH_SHORT).show()
+            a.toast("동영상이나 GIF 파일만 쓸 수 있어요")
             return
         }
         if (kind == "anim" && Build.VERSION.SDK_INT < 28) {
-            Toast.makeText(a, "움직이는 GIF는 안드로이드 9 이상에서 돼요", Toast.LENGTH_SHORT).show()
+            a.toast("움직이는 GIF는 안드로이드 9 이상에서 돼요")
             return
         }
-        Toast.makeText(a, "배경을 준비하는 중…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val ext = when (type) {
-                "image/gif" -> "gif"; "image/webp" -> "webp"; "video/webm" -> "webm"; "video/3gpp" -> "3gp"; else -> "mp4"
-            }
-            val name = "bg_" + System.currentTimeMillis() + "." + ext
-            val ok = try {
+        a.toast("배경을 준비하는 중…")
+        val ext = when (type) {
+            "image/gif" -> "gif"; "image/webp" -> "webp"; "video/webm" -> "webm"; "video/3gpp" -> "3gp"; else -> "mp4"
+        }
+        val name = "bg_" + System.currentTimeMillis() + "." + ext
+        inBackground({
+            try {
                 val out = File(dir(a), name)
                 a.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } } != null
             } catch (_: Exception) { false }
-            a.runOnUiThread {
-                if (ok) {
-                    set("$kind:$name", a)
-                    Toast.makeText(a, "움직이는 배경을 켰어요. 홈 화면에서 보여요.", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(a, "파일을 읽지 못했어요", Toast.LENGTH_SHORT).show()
-                }
+        }) { ok ->
+            if (ok) {
+                set("$kind:$name", a)
+                a.toast("움직이는 배경을 켰어요. 홈 화면에서 보여요.")
+            } else {
+                a.toast("파일을 읽지 못했어요")
             }
-        }.start()
+        }
     }
 
     /** Sets the kind and removes copied files that are no longer used. */

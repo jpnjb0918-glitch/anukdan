@@ -112,7 +112,6 @@ class WidgetPickerActivity : Activity() {
         setContentView(lv)
     }
 
-    private fun dp(v: Float) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     private val previews = HashMap<String, android.graphics.Bitmap?>()
 

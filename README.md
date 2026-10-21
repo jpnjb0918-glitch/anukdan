@@ -56,8 +56,8 @@ Google은 브라우저·메신저·파일 관리자로 받은 앱이 알림 접�
 |---|---|
 | `HomeActivity.kt` | 홈 화면 조립, 바인딩, 메뉴, 위젯 추가, 제스처 실행 |
 | `DragController.kt` | 길게 누르기 → 끌기 → 놓기 처리 |
-| `Layouts.kt` | 격자(CellLayout), 페이지 넘김(PagedView: 위아래로 쓸기·두 번 탭·두 손가락 오므리기/벌리기·아이콘 위로 쓸기), 페이지 점, 드래그 레이어 |
-| `UI.kt` | 앱 서랍, 폴더 창, 팝업 메뉴, 드롭 바 |
+| `Layouts.kt` | 격자(CellLayout), 옆으로 넘기는 페이지의 공통 동작(HorizontalPager: 끌기·튕기기·맞추기·무한 스크롤), 홈 페이지(PagedView: 위아래로 쓸기·두 번 탭·두 손가락 오므리기/벌리기·아이콘 위로 쓸기), 페이지 점, 드래그 레이어 |
+| `UI.kt` | 앱 서랍(서랍 페이지도 HorizontalPager), 폴더 창, 팝업 메뉴, 드롭 바 |
 | `IconProvider.kt` | 아이콘 고르기 순서(앱별 선택 → 아이콘 팩), 아늑단 테두리, 폴더 아이콘 |
 | `IconPacks.kt` | 외부 아이콘 팩 찾기·appfilter 해석·대체 아이콘 합성 |
 | `CustomIcons.kt` | 사진으로 아이콘 만들기 |
@@ -68,6 +68,7 @@ Google은 브라우저·메신저·파일 관리자로 받은 앱이 알림 접�
 | `Services.kt` | 알림 배지 서비스, 화면 끄기 권한, 위젯 호스트 |
 | `CatWidgets.kt` / `Weather.kt` | 아늑단 위젯 (시계·배터리·검색창·인터넷 검색·메모 / 날씨: Open-Meteo에서 받기, 도시 찾기, 현재 위치) |
 | `SearchExtras.kt` | 앱 서랍 검색의 계산식, 단위 변환, 연락처 |
+| `Common.kt` | 여러 화면이 같이 쓰는 작은 도구 (dp 변환, 토스트, 웹 페이지 열기, 복사, 시스템 방송 받기, 백그라운드 작업 후 화면 갱신, HTTP 받기) |
 
 외부 라이브러리 없이 안드로이드 기본 API만 써요 (minSdk 26 = Android 8.0, targetSdk 34).
 
