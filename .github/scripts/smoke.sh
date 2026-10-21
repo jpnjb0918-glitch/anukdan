@@ -1717,12 +1717,19 @@ if [ -n "$TDEV" ]; then
   python3 - "$TDEV" "$TMAXX" "$TMAXY" > shots/tap.sh <<'PY'
 import sys
 dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-x, y = int(540 * mx / 1080), int(1250 * my / 2400)
-e = [(3, 47, 0), (3, 57, 801), (3, 58, 512), (3, 48, 8), (3, 53, x), (3, 54, y), (0, 0, 0),
-     (3, 58, 0), (3, 57, 4294967295), (0, 0, 0)]
-# the swipe and the tap in one root shell, so the tap lands while the page is still sliding
-print("input swipe 900 1200 150 1200 120")
-print("\n".join(f"sendevent {dev} {t} {c} {v}" for t, c, v in e))
+def sx(x): return int(x * mx / 1080)
+def sy(y): return int(y * my / 2400)
+out = []
+def ev(t, c, v): out.append(f"sendevent {dev} {t} {c} {v}")
+# a sideways swipe (900 -> 150) and, as soon as the finger lifts, a tap: all raw events from one root shell,
+# so the tap lands while the page is still sliding (the slide takes 280 ms)
+ev(3, 47, 0); ev(3, 57, 811); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(900)); ev(3, 54, sy(1200)); ev(0, 0, 0)
+for i in range(1, 9):
+    ev(3, 53, sx(900 - 750 * i / 8)); ev(0, 0, 0)
+ev(3, 58, 0); ev(3, 57, 4294967295); ev(0, 0, 0)
+ev(3, 57, 812); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(540)); ev(3, 54, sy(1250)); ev(0, 0, 0)
+ev(3, 58, 0); ev(3, 57, 4294967295); ev(0, 0, 0)
+print("\n".join(out))
 PY
   adb logcat -c
   root_sh shots/tap.sh
