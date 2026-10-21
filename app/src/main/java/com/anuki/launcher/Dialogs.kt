@@ -105,6 +105,34 @@ object Dialogs {
             .setNegativeButton("닫기", null).show()
     }
 
+    // ------------------------------------------------------------ 아늑단 날씨
+    /** Where the weather is for: a city found by name, or the phone's rough location ([onCurrent]). */
+    fun weatherPlace(a: Activity, onPlace: (Weather.Place) -> Unit, onCurrent: () -> Unit) {
+        AlertDialog.Builder(a).setTitle("날씨 지역")
+            .setItems(arrayOf("도시 이름으로 찾기", "현재 위치 (대략적인 위치)", Weather.SOURCE)) { _, which ->
+                when (which) {
+                    0 -> askText(a, "도시 이름 (예: 서울, 부산, 제주)", "") { q ->
+                        if (q.isBlank()) return@askText
+                        Toast.makeText(a, "'$q' 찾는 중…", Toast.LENGTH_SHORT).show()
+                        Weather.search(q) { list ->
+                            when {
+                                list == null -> Toast.makeText(a, "인터넷에 연결되지 않아 찾지 못했어요", Toast.LENGTH_SHORT).show()
+                                list.isEmpty() -> Toast.makeText(a, "'$q'(이)라는 곳을 찾지 못했어요", Toast.LENGTH_SHORT).show()
+                                else -> AlertDialog.Builder(a).setTitle("'$q' 검색 결과")
+                                    .setItems(list.map { p -> p.name + if (p.sub.isNotEmpty()) " · " + p.sub else "" }.toTypedArray()) { _, i -> onPlace(list[i]) }
+                                    .setNegativeButton("취소", null).show()
+                            }
+                        }
+                    }
+                    1 -> onCurrent()
+                    2 -> try {
+                        a.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://open-meteo.com/")))
+                    } catch (_: Exception) { }
+                }
+            }
+            .setNegativeButton("취소", null).show()
+    }
+
     fun askText(a: Activity, title: String, initial: String, onOk: (String) -> Unit) {
         val et = EditText(a).apply { setText(initial); setSingleLine(true); setSelection(initial.length) }
         val wrap = LinearLayout(a).apply {

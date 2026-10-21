@@ -197,11 +197,15 @@ class HomeActivity : Activity(), PagedView.Listener {
 
         column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         workspace = PagedView(this).apply { listener = this@HomeActivity }
+        // once the pages have their real size, icons that were sized from a guess are sized again
+        workspace.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+            if ((r - l != orr - ol || b - t != ob - ot) && apps.loaded && deskIconSize() != lastDeskIcon) workspace.post { bindAll() }
+        }
         column.addView(workspace, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         indicator = PageIndicator(this)
         column.addView(indicator, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18f)))
         dock = CellLayout(this).apply { container = HomeItem.DOCK; rows = 1; cols = prefs.dockCount }
-        dockFrame = SwipeFrame(this) { runAction(prefs.gestureUp, prefs.gestureUpApp) }
+        dockFrame = SwipeFrame(this, { v -> onIconSwipeUp(v) }) { runAction(prefs.gestureUp, prefs.gestureUpApp) }
         dockFrame.addView(dock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         column.addView(dockFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, iconSize + dp(28f)).apply {
             setMargins(dp(12f), dp(4f), dp(12f), dp(10f))
@@ -341,6 +345,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         dockFrame.requestLayout()
 
         val homeLabels = prefs.homeLabels
+        val desk = deskIconSize()
+        lastDeskIcon = desk
         for (item in model.items) {
             if (item.container >= 0) continue // lives inside a folder
             val onDesktop = item.container == HomeItem.DESKTOP
@@ -352,6 +358,8 @@ class HomeActivity : Activity(), PagedView.Listener {
                 else -> null
             } ?: continue
             if (onDesktop) {
+                // many columns / rows: the icon shrinks to its cell (the bitmap stays the normal size)
+                if (v is IconView && desk < iconSize) v.iconSize = desk
                 if (item.screen < workspace.pageCount) {
                     workspace.page(item.screen).addView(v, CellLayout.LP(item.x, item.y, item.spanX, item.spanY))
                 }
@@ -365,6 +373,21 @@ class HomeActivity : Activity(), PagedView.Listener {
         if (drawer.isOpen) { drawer.applyTheme(); drawer.refresh() }
         folderView.folder?.let { f -> if (model.byId(f.id) != null) folderView.refresh() else folderView.close() }
         if (LauncherApp.debug) LauncherApp.dlog("bindAll: ${model.items.size} items in ${(System.nanoTime() - t0) / 1_000_000}ms")
+    }
+
+    private var lastDeskIcon = 0
+
+    /** Icon size on the home pages: the normal size, or smaller when the cells are too small for it. */
+    private fun deskIconSize(): Int {
+        val dm = resources.displayMetrics
+        val pageW = if (workspace.width > 0) workspace.width else dm.widthPixels
+        val pageH = if (workspace.height > 0) workspace.height
+        else dm.heightPixels - insetTop - insetBottom - dp(18f) - (iconSize + dp(42f))
+        val cw = (pageW - dp(12f)) / prefs.homeCols.coerceAtLeast(1)
+        val ch = (pageH - dp(8f)) / prefs.homeRows.coerceAtLeast(1)
+        val label = if (prefs.homeLabels) IconView.labelLine(this, prefs.labelPx) + dp(4f) else 0f
+        val fit = minOf((cw * 0.88f).toInt(), (ch - label - dp(8f)).toInt())
+        return fit.coerceIn(dp(20f), maxOf(dp(20f), iconSize))
     }
 
     fun workspaceAllPages(f: (CellLayout) -> Unit) {
@@ -416,6 +439,21 @@ class HomeActivity : Activity(), PagedView.Listener {
         v.item = item
         v.tag = item
         v.iconSize = iconSize
+        v.label = item.title
+        v.showLabel = labels
+        v.labelPx = prefs.labelPx
+        v.badgeStyle = prefs.badgeStyle
+        v.badge = contents.sumOf { Badges.countFor(it.packageName, it.serial) }
+        v.setOnLongClickListener { onItemLongPress(v, item, null, sourceOf(item), v.lastRawX, v.lastRawY); true }
+        val first = contents.firstOrNull()
+        if (item.cover && first != null) {
+            // 커버 폴더: the first app's icon with a small folder mark; a tap opens that app, a swipe up the folder
+            v.contentDescription = "${item.title} (커버 폴더: ${first.label})"
+            v.icon = icons.appIconAsync(first, iconSize) { bmp -> if (v.item === item) v.icon = icons.coverIcon(bmp, contents.size) }
+                ?.let { icons.coverIcon(it, contents.size) }
+            v.setOnClickListener { LauncherApp.dlog("cover folder tap -> ${first.key}"); launch(first, v) }
+            return v
+        }
         v.icon = icons.folderIcon(item.color, contents, iconSize)
         // the minis whose icons aren't drawn yet come in when they are
         val missing = icons.folderIconMissing(contents)
@@ -426,13 +464,7 @@ class HomeActivity : Activity(), PagedView.Listener {
                 if (left == 0 && v.item === item) v.icon = icons.folderIcon(item.color, contents, iconSize)
             }
         }
-        v.label = item.title
-        v.showLabel = labels
-        v.labelPx = prefs.labelPx
-        v.badgeStyle = prefs.badgeStyle
-        v.badge = contents.sumOf { Badges.countFor(it.packageName, it.serial) }
         v.setOnClickListener { openFolder(item) }
-        v.setOnLongClickListener { onItemLongPress(v, item, null, sourceOf(item), v.lastRawX, v.lastRawY); true }
         return v
     }
 
@@ -464,6 +496,10 @@ class HomeActivity : Activity(), PagedView.Listener {
                     Dialogs.webSearch(this) { q -> if (!WebSearch.open(this, q)) toast("검색할 앱이 없어요") }
                 CatWidgets.MEMO -> editMemo(item)
                 CatWidgets.BATTERY -> openSystem(Intent(Intent.ACTION_POWER_USAGE_SUMMARY), "배터리 화면을 열 수 없어요")
+                CatWidgets.WEATHER -> if (item.provider.isEmpty()) chooseWeatherPlace(item) else {
+                    Weather.refresh(item.provider, force = true)
+                    if (!WebSearch.open(this, item.title + " 날씨")) toast("날씨를 보여 줄 앱이 없어요")
+                }
                 else -> openSystem(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS), "시계 앱을 열 수 없어요")
             }
         }
@@ -504,11 +540,49 @@ class HomeActivity : Activity(), PagedView.Listener {
         val cur = workspace.currentPage.coerceIn(0, maxOf(0, workspace.pageCount - 1))
         val v = model.findVacant(HomeItem.DESKTOP, cur, cols, rows, sx, sy)
         val spot = if (v != null) intArrayOf(cur, v[0], v[1]) else model.findSpotAnywhere(cols, rows, sx, sy, cur)
-        model.items += HomeItem(model.newId(), HomeItem.TYPE_CAT_WIDGET, HomeItem.DESKTOP, spot[0], spot[1], spot[2], sx, sy, key = key)
+        val added = HomeItem(model.newId(), HomeItem.TYPE_CAT_WIDGET, HomeItem.DESKTOP, spot[0], spot[1], spot[2], sx, sy, key = key)
+        model.items += added
         model.save()
         LauncherApp.dlog("cat widget $key added at page ${spot[0]} (${spot[1]},${spot[2]}) ${sx}x$sy")
         bindAll()
         workspace.snapToPage(spot[0])
+        if (key == CatWidgets.WEATHER) chooseWeatherPlace(added)
+    }
+
+    // ------------------------------------------------------------ 아늑단 날씨
+    private var weatherItemId = -1L
+
+    private fun chooseWeatherPlace(item: HomeItem) {
+        Dialogs.weatherPlace(this, onPlace = { p -> setWeatherPlace(item, p) }) {
+            weatherItemId = item.id
+            if (Weather.hasLocationPermission(this)) useCurrentPlace()
+            else @Suppress("DEPRECATION") requestPermissions(arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+        }
+    }
+
+    private fun useCurrentPlace() {
+        val item = model.byId(weatherItemId) ?: return
+        toast("현재 위치를 찾는 중…")
+        Weather.currentPlace(this) { p ->
+            if (p == null) toast("위치를 알 수 없어요 — 위치를 켜거나 도시 이름으로 찾아 주세요") else setWeatherPlace(item, p)
+        }
+    }
+
+    private fun setWeatherPlace(item: HomeItem, p: Weather.Place) {
+        item.provider = Weather.loc(p.lat, p.lon)
+        item.title = p.name
+        model.save()
+        LauncherApp.dlog("weather place -> ${p.name} (${item.provider})")
+        Weather.refresh(item.provider, force = true)
+        bindAll()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) useCurrentPlace()
+            else toast("위치 권한이 없어서 도시 이름으로 찾아 주세요")
+        }
     }
 
     private var resizeFrame: WidgetResizeFrame? = null
@@ -680,6 +754,27 @@ class HomeActivity : Activity(), PagedView.Listener {
     override fun onSwipeUp() = runAction(prefs.gestureUp, prefs.gestureUpApp)
     override fun onSwipeDown() = runAction(prefs.gestureDown, prefs.gestureDownApp)
     override fun onDoubleTap() = runAction(prefs.gestureDouble, prefs.gestureDoubleApp)
+    override fun onPinchIn() { LauncherApp.dlog("gesture pinch in -> ${prefs.gesturePinchIn}"); runAction(prefs.gesturePinchIn, prefs.gesturePinchInApp) }
+    override fun onPinchOut() { LauncherApp.dlog("gesture pinch out -> ${prefs.gesturePinchOut}"); runAction(prefs.gesturePinchOut, prefs.gesturePinchOutApp) }
+
+    /** 위로 쓸기 on a home/dock icon: its own app, or the folder behind a 커버 폴더. False = not an icon with a swipe. */
+    override fun onIconSwipeUp(child: View?): Boolean {
+        val v = child as? IconView ?: return false
+        val item = v.item ?: return false
+        if (item.type == HomeItem.TYPE_FOLDER && item.cover) {
+            LauncherApp.dlog("cover folder swipe up -> open '${item.title}'")
+            openFolder(item)
+            return true
+        }
+        if (item.type == HomeItem.TYPE_APP && item.swipeUp.isNotEmpty()) {
+            val a = apps.find(item.swipeUp)
+            if (a == null) { toast("위로 쓸면 열 앱을 찾을 수 없어요"); return true }
+            LauncherApp.dlog("icon swipe up ${item.key} -> ${a.key}")
+            launch(a, v)
+            return true
+        }
+        return false
+    }
 
     override fun onEmptyLongPress(rawX: Float, rawY: Float) {
         val entries = ArrayList<MenuEntry>()
@@ -729,6 +824,12 @@ class HomeActivity : Activity(), PagedView.Listener {
             item?.type == HomeItem.TYPE_CAT_WIDGET -> {
                 when (item.key) {
                     CatWidgets.MEMO -> list += MenuEntry("메모 쓰기") { editMemo(item) }
+                    CatWidgets.WEATHER -> {
+                        list += MenuEntry("날씨 지역 바꾸기") { chooseWeatherPlace(item) }
+                        if (item.provider.isNotEmpty()) list += MenuEntry("날씨 새로 받기") {
+                            Weather.refresh(item.provider, force = true); toast("날씨를 새로 받고 있어요")
+                        }
+                    }
                     CatWidgets.WEB -> list += MenuEntry("검색 엔진: " + WebSearch.label(prefs.searchEngine)) {
                         Dialogs.searchEngine(this) { bindAll() }
                     }
@@ -748,6 +849,12 @@ class HomeActivity : Activity(), PagedView.Listener {
                     Dialogs.askText(this, "폴더 이름", item.title) { item.title = it; model.save(); bindAll() }
                 }
                 list += MenuEntry("폴더 색") { Dialogs.folderColor(this, item) { model.save(); bindAll() } }
+                list += MenuEntry(if (item.cover) "커버 폴더 끄기" else "커버 폴더로 쓰기") {
+                    item.cover = !item.cover
+                    model.save(); bindAll()
+                    LauncherApp.dlog("cover folder '${item.title}' -> ${item.cover}")
+                    toast(if (item.cover) "탭하면 첫 앱이 열리고, 위로 쓸면 폴더가 열려요" else "다시 탭하면 폴더가 열려요")
+                }
                 list += MenuEntry("폴더 삭제") {
                     AlertDialog.Builder(this).setMessage("'${item.title}' 폴더와 안의 바로가기를 홈에서 지울까요? (앱은 지워지지 않아요)")
                         .setPositiveButton("삭제") { _, _ -> removeItem(item) }
@@ -762,12 +869,34 @@ class HomeActivity : Activity(), PagedView.Listener {
                     list += MenuEntry("홈 화면에 추가") { addToHome(app) }
                     list += MenuEntry("앱 서랍에서 숨기기") { prefs.hidden = prefs.hidden + app.key; drawer.refresh() }
                 } else if (item != null) {
+                    if (source != DragInfo.SRC_FOLDER) list += MenuEntry("위로 쓸면: " + swipeLabel(item)) { chooseSwipe(item) }
                     list += MenuEntry("홈에서 제거") { removeItem(item) }
                 }
                 if (!app.isSystem) list += MenuEntry("설치 삭제") { uninstall(app) }
             }
         }
         return list
+    }
+
+    private fun swipeLabel(item: HomeItem): String =
+        if (item.swipeUp.isEmpty()) "없음" else apps.find(item.swipeUp)?.label ?: "?"
+
+    /** 위로 쓸기: which app a swipe up on this icon opens. */
+    private fun chooseSwipe(item: HomeItem) {
+        val opts = if (item.swipeUp.isEmpty()) arrayOf("앱 고르기…") else arrayOf("앱 고르기…", "끄기")
+        AlertDialog.Builder(this).setTitle("이 아이콘을 위로 쓸면")
+            .setItems(opts) { _, which ->
+                if (which == 0) Dialogs.pickApp(this, "위로 쓸면 열 앱") { a ->
+                    item.swipeUp = a.key
+                    model.save(); bindAll()
+                    LauncherApp.dlog("icon swipe up set ${item.key} -> ${a.key}")
+                    toast("위로 쓸면 ${a.label}이(가) 열려요")
+                } else {
+                    item.swipeUp = ""
+                    model.save(); bindAll()
+                    toast("위로 쓸기를 껐어요")
+                }
+            }.setNegativeButton("취소", null).show()
     }
 
     private fun shortcuts(app: AppEntry): List<MenuEntry> {
@@ -999,19 +1128,35 @@ class HomeActivity : Activity(), PagedView.Listener {
         const val REQ_DEFAULT_HOME = 14
         const val REQ_PICK_PHOTO = 15
         const val REQ_VOICE = 16
+        const val REQ_LOCATION = 17
     }
 }
 
-/** Dock wrapper: swiping up on the dock opens the drawer too. */
-class SwipeFrame(ctx: Context, private val onSwipeUp: () -> Unit) : FrameLayout(ctx) {
+/** Dock wrapper: swiping up on the dock opens the drawer too (or, on an icon with 위로 쓸기 set, that icon's app). */
+class SwipeFrame(
+    ctx: Context,
+    private val onIconSwipeUp: (View?) -> Boolean = { false },
+    private val onSwipeUp: () -> Unit,
+) : FrameLayout(ctx) {
     private var downX = 0f
     private var downY = 0f
     private var swiping = false
+    private var downChild: View? = null
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+
+    private fun childAt(x: Float, y: Float): View? {
+        val g = getChildAt(0) as? ViewGroup ?: return null
+        val lx = x - g.left; val ly = y - g.top
+        for (i in g.childCount - 1 downTo 0) {
+            val c = g.getChildAt(i)
+            if (lx >= c.left && lx < c.right && ly >= c.top && ly < c.bottom) return c
+        }
+        return null
+    }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = ev.rawX; downY = ev.rawY; swiping = false }
+            MotionEvent.ACTION_DOWN -> { downX = ev.rawX; downY = ev.rawY; swiping = false; downChild = childAt(ev.x, ev.y) }
             MotionEvent.ACTION_MOVE -> {
                 val dy = downY - ev.rawY
                 if (dy > slop * 2 && dy > abs(ev.rawX - downX)) { swiping = true; return true }
@@ -1022,12 +1167,15 @@ class SwipeFrame(ctx: Context, private val onSwipeUp: () -> Unit) : FrameLayout(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; swiping = false }
+            MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; swiping = false; downChild = childAt(event.x, event.y) }
             MotionEvent.ACTION_MOVE -> {
                 val dy = downY - event.rawY
                 if (dy > slop * 2 && dy > abs(event.rawX - downX)) swiping = true
             }
-            MotionEvent.ACTION_UP -> { if (swiping) onSwipeUp(); swiping = false }
+            MotionEvent.ACTION_UP -> {
+                if (swiping && !onIconSwipeUp(downChild)) onSwipeUp()
+                swiping = false; downChild = null
+            }
             MotionEvent.ACTION_CANCEL -> swiping = false
         }
         return true

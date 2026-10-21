@@ -20,11 +20,16 @@ class HomeItem(
     var widgetId: Int = -1,
     var provider: String = "",
     var color: String = "teal",
+    /** 위로 쓸기: app key opened when this home/dock app icon is swiped up ("" = the home screen's own swipe-up). */
+    var swipeUp: String = "",
+    /** 커버 폴더: a tap opens the folder's first app, a swipe up opens the folder. */
+    var cover: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("type", type).put("container", container)
         .put("screen", screen).put("x", x).put("y", y).put("spanX", spanX).put("spanY", spanY)
         .put("key", key).put("title", title).put("widgetId", widgetId).put("provider", provider).put("color", color)
+        .put("swipeUp", swipeUp).put("cover", cover)
 
     /** A system widget or a built-in 아늑단 widget: desktop only, never merged into a folder. */
     val isWidget get() = type == TYPE_WIDGET || type == TYPE_CAT_WIDGET
@@ -41,7 +46,7 @@ class HomeItem(
             o.getLong("id"), o.getInt("type"), o.getLong("container"),
             o.optInt("screen"), o.optInt("x"), o.optInt("y"), o.optInt("spanX", 1), o.optInt("spanY", 1),
             o.optString("key"), o.optString("title"), o.optInt("widgetId", -1), o.optString("provider"),
-            o.optString("color", "teal"),
+            o.optString("color", "teal"), o.optString("swipeUp"), o.optBoolean("cover"),
         )
     }
 }

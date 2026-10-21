@@ -293,6 +293,38 @@ class IconProvider(private val ctx: Context) {
         return b
     }
 
+    /**
+     * 커버 폴더: the first app's icon with a small round folder mark in the corner (how many apps are inside),
+     * so it still reads as a folder.
+     */
+    fun coverIcon(first: Bitmap, count: Int): Bitmap {
+        val size = first.width
+        val b = first.copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(b)
+        val r = size * 0.17f
+        val cx = size - r * 1.05f
+        val cy = size - r * 1.05f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = Color.WHITE
+        c.drawCircle(cx, cy, r, p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = size * 0.035f
+        p.color = 0xFF111111.toInt()
+        c.drawCircle(cx, cy, r, p)
+        // 2 x 2 small tiles: "there is more in here"
+        p.style = Paint.Style.FILL
+        p.color = IconColors.map(0xFF2E9497.toInt(), IconColors.current())
+        val t = r * 0.34f
+        val g = r * 0.12f
+        for (dx in 0..1) for (dy in 0..1) {
+            val x = cx - t - g / 2 + dx * (t + g)
+            val y = cy - t - g / 2 + dy * (t + g)
+            c.drawRoundRect(RectF(x, y, x + t, y + t), t * 0.3f, t * 0.3f, p)
+        }
+        if (LauncherApp.debug) LauncherApp.dlog("cover icon ($count apps)")
+        return b
+    }
+
     private fun scaled(src: Bitmap, size: Int): Bitmap =
         if (src.width == size) src else Bitmap.createScaledBitmap(src, size, size, true)
 

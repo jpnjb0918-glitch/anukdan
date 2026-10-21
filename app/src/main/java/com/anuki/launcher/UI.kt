@@ -641,6 +641,14 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
                 Toast.makeText(act, "$r 을(를) 복사했어요", Toast.LENGTH_SHORT).show()
             }
         }
+        SearchExtras.convert(q)?.let { r ->
+            extraRow("⇄", r, "단위 변환 · 눌러서 복사", "단위 변환: $r") {
+                val v = r.substringAfter("= ").substringBefore(" ·")
+                val cm = act.getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("단위 변환", v))
+                Toast.makeText(act, "$v 을(를) 복사했어요", Toast.LENGTH_SHORT).show()
+            }
+        }
         for (c in SearchExtras.findContacts(q)) {
             extraRow("☎", c.name, "연락처", "연락처: ${c.name}") {
                 try { act.startActivity(Intent(Intent.ACTION_VIEW, c.uri)) } catch (_: Exception) { Toast.makeText(act, "연락처를 열 수 없어요", Toast.LENGTH_SHORT).show() }

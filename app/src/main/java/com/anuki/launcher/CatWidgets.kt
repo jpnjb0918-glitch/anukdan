@@ -36,7 +36,8 @@ import kotlin.math.sin
  * top edge and its paws gripping the edge (assets/catwidget, made by tools/catfmt/make_widget_parts.py), and they
  * follow 아이콘 색 and the launcher font.
  *
- * Stored as HomeItem.TYPE_CAT_WIDGET: key = kind, provider = clock style ("analog" or ""), title = memo text.
+ * Stored as HomeItem.TYPE_CAT_WIDGET: key = kind, provider = clock style ("analog" or "") or the weather place
+ * ("lat,lon"), title = memo text or the weather place's name.
  */
 object CatWidgets {
     const val CLOCK = "clock"
@@ -44,6 +45,7 @@ object CatWidgets {
     const val SEARCH = "search"
     const val MEMO = "memo"
     const val WEB = "web"
+    const val WEATHER = "weather"
     const val ANALOG = "analog"
 
     class Kind(val key: String, val label: String, val desc: String, val spanX: Int, val spanY: Int)
@@ -54,6 +56,7 @@ object CatWidgets {
         Kind(SEARCH, "아늑단 검색창", "누르면 앱을 검색해요", 4, 1),
         Kind(WEB, "아늑단 인터넷 검색", "누르면 인터넷 검색, 마이크는 말로 검색 · 길게 눌러 검색 엔진 고르기", 4, 1),
         Kind(MEMO, "아늑단 메모", "눌러서 메모를 써요", 2, 2),
+        Kind(WEATHER, "아늑단 날씨", "지금 날씨와 오늘 최고·최저 기온 · 도시를 고르거나 현재 위치 · " + Weather.SOURCE, 4, 2),
     )
 
     fun kind(key: String) = KINDS.firstOrNull { it.key == key }
@@ -63,6 +66,7 @@ object CatWidgets {
         SEARCH -> SearchWidget(ctx, item)
         WEB -> WebSearchWidget(ctx, item)
         MEMO -> MemoWidget(ctx, item)
+        WEATHER -> WeatherWidget(ctx, item)
         else -> ClockWidget(ctx, item)
     }
 

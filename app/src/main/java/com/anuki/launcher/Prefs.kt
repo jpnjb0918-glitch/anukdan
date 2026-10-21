@@ -80,6 +80,10 @@ class Prefs(ctx: Context) {
     var gestureUpApp by strPref("g_up_app", "")
     var gestureDownApp by strPref("g_down_app", "")
     var gestureDoubleApp by strPref("g_double_app", "")
+    var gesturePinchIn by strPref("g_pinch_in", "settings")   // 두 손가락 오므리기
+    var gesturePinchOut by strPref("g_pinch_out", "none")     // 두 손가락 벌리기
+    var gesturePinchInApp by strPref("g_pinch_in_app", "")
+    var gesturePinchOutApp by strPref("g_pinch_out_app", "")
 
     var firstRunDone: Boolean
         get() = sp.getBoolean("first_run", false)

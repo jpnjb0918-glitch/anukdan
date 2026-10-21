@@ -109,6 +109,92 @@ object SearchExtras {
         }
     }
 
+    // ---------------------------------------------------------------- unit conversion
+    /** One unit (not kotlin.Unit): [toBase] multiplies into the dimension's base unit (m, kg, ㎡, L, km/h); temperature is special. */
+    private class Measure(val dim: String, val show: String, val toBase: Double, vararg val names: String)
+
+    private val UNITS = listOf(
+        Measure("len", "mm", 0.001, "mm", "밀리미터"),
+        Measure("len", "cm", 0.01, "cm", "센티미터", "센티"),
+        Measure("len", "m", 1.0, "m", "미터"),
+        Measure("len", "km", 1000.0, "km", "킬로미터", "키로"),
+        Measure("len", "in", 0.0254, "in", "inch", "inches", "인치"),
+        Measure("len", "ft", 0.3048, "ft", "feet", "foot", "피트"),
+        Measure("len", "yd", 0.9144, "yd", "yard", "yards", "야드"),
+        Measure("len", "mi", 1609.344, "mi", "mile", "miles", "마일"),
+        Measure("mass", "g", 0.001, "g", "그램"),
+        Measure("mass", "kg", 1.0, "kg", "킬로그램", "킬로"),
+        Measure("mass", "lb", 0.45359237, "lb", "lbs", "pound", "pounds", "파운드"),
+        Measure("mass", "oz", 0.028349523125, "oz", "ounce", "온스"),
+        Measure("mass", "근", 0.6, "근"),
+        Measure("area", "㎡", 1.0, "m2", "㎡", "m²", "제곱미터"),
+        Measure("area", "평", 400.0 / 121.0, "평"),
+        Measure("area", "ft²", 0.09290304, "ft2", "ft²", "sqft"),
+        Measure("vol", "mL", 0.001, "ml", "mL", "밀리리터"),
+        Measure("vol", "L", 1.0, "l", "L", "리터"),
+        Measure("vol", "gal", 3.785411784, "gal", "gallon", "갤런"),
+        Measure("speed", "km/h", 1.0, "km/h", "kmh", "kph"),
+        Measure("speed", "mph", 1.609344, "mph"),
+        Measure("temp", "°C", 1.0, "°c", "℃", "c", "섭씨"),
+        Measure("temp", "°F", 1.0, "°f", "℉", "f", "화씨"),
+    )
+
+    /** What each unit turns into first (the usual question), then the rest of its kind. */
+    private val PREFER = mapOf(
+        "mm" to listOf("in", "cm"), "cm" to listOf("in", "m"), "m" to listOf("ft", "cm"), "km" to listOf("mi", "m"),
+        "in" to listOf("cm", "mm"), "ft" to listOf("m", "cm"), "yd" to listOf("m"), "mi" to listOf("km", "m"),
+        "g" to listOf("oz", "kg"), "kg" to listOf("lb", "g"), "lb" to listOf("kg", "g"), "oz" to listOf("g"), "근" to listOf("g", "kg"),
+        "㎡" to listOf("평", "ft²"), "평" to listOf("㎡"), "ft²" to listOf("㎡", "평"),
+        "mL" to listOf("L"), "L" to listOf("gal", "mL"), "gal" to listOf("L"),
+        "km/h" to listOf("mph"), "mph" to listOf("km/h"), "°C" to listOf("°F"), "°F" to listOf("°C"),
+    )
+
+    private fun unitNamed(s: String): Measure? {
+        val t = s.trim()
+        if (t.isEmpty()) return null
+        // c / f / l alone only in their exact case-insensitive single-letter form; the rest ignore case
+        return UNITS.firstOrNull { u -> u.names.any { it.equals(t, ignoreCase = true) } }
+    }
+
+    private val QTY = Regex("""^\s*(-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*([^\s0-9][^\s]*?)\s*(?:(?:in|to|→|->|=|을|를|은|는|으로|로)\s*([^\s]+))?\s*$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * "10km" → "10 km = 6.214 mi · 10,000 m", "25평" → "25평 = 82.64 ㎡", "30°C to °F" → "30 °C = 86 °F"; null when [q] is
+     * not a number with a known unit. Only the whole query counts, so app names like "4K 비디오" don't match.
+     */
+    fun convert(q: String): String? {
+        val m = QTY.matchEntire(q) ?: return null
+        val n = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return null
+        var unitText = m.groupValues[2]
+        var target = m.groupValues[3]
+        // "10kmmi" can't happen; but "30°c→°f" may glue the arrow to the unit
+        for (sep in listOf("→", "->", "=")) if (unitText.contains(sep)) {
+            target = unitText.substringAfter(sep).ifEmpty { target }; unitText = unitText.substringBefore(sep)
+        }
+        val from = unitNamed(unitText) ?: return null
+        val kinds = UNITS.filter { it.dim == from.dim && it !== from }
+        val want = unitNamed(target)?.takeIf { it.dim == from.dim && it !== from }
+        val order = (listOfNotNull(want) + (PREFER[from.show] ?: emptyList()).mapNotNull { s -> kinds.firstOrNull { it.show == s } } + kinds)
+            .distinct().take(if (want != null) 1 else 2)
+        if (order.isEmpty()) return null
+        val parts = order.map { to -> fmtNum(convertValue(n, from, to)) + sp(to.show) + to.show }
+        return fmtNum(n) + sp(from.show) + from.show + " = " + parts.joinToString(" · ")
+    }
+
+    private fun sp(unit: String) = if (unit == "평" || unit == "근") "" else " "
+
+    private fun convertValue(n: Double, from: Measure, to: Measure): Double {
+        if (from.dim == "temp") return if (from.show == "°C") n * 9 / 5 + 32 else (n - 32) * 5 / 9
+        return n * from.toBase / to.toBase
+    }
+
+    /** Whole numbers from 1,000 up, otherwise 4 significant digits (at most 3 decimals); thousands separators. */
+    private fun fmtNum(v: Double): String {
+        val bd = if (kotlin.math.abs(v) >= 1000) BigDecimal(v).setScale(0, RoundingMode.HALF_UP)
+        else BigDecimal(v).round(MathContext(4, RoundingMode.HALF_UP)).let { if (it.scale() > 3) it.setScale(3, RoundingMode.HALF_UP) else it }
+        return format(bd.stripTrailingZeros())
+    }
+
     // ---------------------------------------------------------------- contacts
     class Contact(val name: String, val uri: Uri)
 

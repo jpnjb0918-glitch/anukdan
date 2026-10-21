@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- opening the system installer for a downloaded update (the user still confirms it) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 아늑단 날씨 '현재 위치' (고를 때만 물어봐요, 대략적인 위치만) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:name=".LauncherApp"

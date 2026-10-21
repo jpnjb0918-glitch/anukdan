@@ -58,8 +58,9 @@ class SettingsActivity : Activity() {
         }
 
         section("홈 화면")
-        seek("격자 열 수", 3, 7, prefs.homeCols, { "${it}칸" }) { prefs.homeCols = it }
-        seek("격자 행 수", 3, 8, prefs.homeRows, { "${it}칸" }) { prefs.homeRows = it }
+        seek("격자 열 수", 3, MAX_COLS, prefs.homeCols, { "${it}칸" }) { prefs.homeCols = it }
+        seek("격자 행 수", 3, MAX_ROWS, prefs.homeRows, { "${it}칸" }) { prefs.homeRows = it }
+        note("칸이 많아 아이콘이 들어가지 않으면 아이콘을 칸에 맞게 줄여요.")
         seek("독 아이콘 수", 3, 7, prefs.dockCount, { "${it}개" }) { prefs.dockCount = it }
         switch("독 배경", null, prefs.dockBackground) { prefs.dockBackground = it }
         switch("아이콘 이름 표시", null, prefs.homeLabels) { prefs.homeLabels = it }
@@ -108,7 +109,7 @@ class SettingsActivity : Activity() {
             }
         }
         choice("인터넷 검색 엔진", WebSearch.ENGINES, prefs.searchEngine) { prefs.searchEngine = it }
-        note("앱 서랍 검색창에 '12*3' 같은 계산식을 쓰면 답이 나오고(눌러서 복사), 맨 아래 '웹에서 검색'으로 인터넷 검색도 할 수 있어요. 홈 화면에는 '아늑단 인터넷 검색' 위젯도 놓을 수 있어요.")
+        note("앱 서랍 검색창에 '12*3' 같은 계산식을 쓰면 답이 나오고, '10km'·'25평'·'30°C'처럼 단위를 붙이면 단위 변환이 나와요(눌러서 복사). 맨 아래 '웹에서 검색'으로 인터넷 검색도 할 수 있어요. 홈 화면에는 '아늑단 인터넷 검색' 위젯도 놓을 수 있어요.")
 
         section("모양")
         seek("아이콘 크기", 70, 130, prefs.iconScale, { "$it%" }) { prefs.iconScale = it }
@@ -155,6 +156,9 @@ class SettingsActivity : Activity() {
         gesture("위로 쓸기", prefs.gestureUp, prefs.gestureUpApp) { a, k -> prefs.gestureUpApp = k; prefs.gestureUp = a }
         gesture("아래로 쓸기", prefs.gestureDown, prefs.gestureDownApp) { a, k -> prefs.gestureDownApp = k; prefs.gestureDown = a }
         gesture("두 번 탭", prefs.gestureDouble, prefs.gestureDoubleApp) { a, k -> prefs.gestureDoubleApp = k; prefs.gestureDouble = a }
+        gesture("두 손가락 오므리기", prefs.gesturePinchIn, prefs.gesturePinchInApp) { a, k -> prefs.gesturePinchInApp = k; prefs.gesturePinchIn = a }
+        gesture("두 손가락 벌리기", prefs.gesturePinchOut, prefs.gesturePinchOutApp) { a, k -> prefs.gesturePinchOutApp = k; prefs.gesturePinchOut = a }
+        note("아이콘 하나만 따로: 홈 화면 아이콘을 길게 눌러 '위로 쓸면'에서 그 아이콘을 위로 쓸 때 열 앱을 고를 수 있어요. 폴더는 '커버 폴더로 쓰기'를 켜면 탭하면 첫 앱, 위로 쓸면 폴더가 열려요.")
         note("'알림창 내리기'는 기기에 따라 동작하지 않을 수 있어요. '화면 끄기'는 처음에 기기 관리자 권한을 한 번 허용해야 하고, 이렇게 끈 뒤에는 지문·얼굴 대신 PIN을 입력해야 할 수 있어요.")
 
         section("알림 배지")
@@ -189,6 +193,9 @@ class SettingsActivity : Activity() {
         action("업데이트 확인", "지금 v${Updater.currentName(this)} · 새 버전이 있으면 기본판·배지판 중 골라 받아요") { Updater.checkNow(this) }
         switch("켤 때 새 버전 알림", "하루에 한 번 확인해요 · 업데이트 질문에서 '아니요'를 누르면 꺼져요", prefs.updateCheck) { prefs.updateCheck = it }
         action("아이콘 그림 라이선스", "아늑단 틀 안의 그림 15,322종은 Arcticons (CC BY-SA 4.0) 기반") { Dialogs.lineIconsLicense(this) }
+        action("날씨 정보", "아늑단 날씨 위젯: Open-Meteo.com (CC BY 4.0) · 지역을 고를 때만 인터넷·위치를 써요") {
+            try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://open-meteo.com/"))) } catch (_: Exception) { }
+        }
         action("글꼴 라이선스", "주아·개구·감자꽃·하이멜로디·나눔손글씨 펜·고운돋움 (SIL Open Font License)") { Dialogs.fontLicense(this) }
 
         sv.post { sv.scrollTo(0, scrollY) }
@@ -379,5 +386,7 @@ class SettingsActivity : Activity() {
         const val REQ_BACKUP = 2
         const val REQ_RESTORE = 3
         const val REQ_CONTACTS = 4
+        const val MAX_COLS = 10
+        const val MAX_ROWS = 12
     }
 }

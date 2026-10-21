@@ -1516,6 +1516,201 @@ adb shell input keyevent KEYCODE_HOME
 adb shell locksettings clear --old 1234 2>&1 | tee -a $LOG
 sleep 2
 
+step "사람들이 바라던 기능 (커버 폴더, 아이콘 위로 쓸기, 두 손가락 제스처, 날씨 위젯, 큰 격자, 단위 변환)"
+long_menu() { adb shell input swipe $1 $2 $1 $2 1500; sleep 1; dump lm; }
+# 1) cover folder in the dock: tap opens the first app, swipe up opens the folder
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+dump cv0
+DF=$(ui shots/cv0.xml list | awk '$1=="폴더" && $3>=2000 {print $2" "$3; exit}')
+echo "dock folder=$DF" >> $LOG
+if [ -n "$DF" ]; then
+  long_menu $DF
+  CV=$(ui shots/lm.xml text "커버 폴더로 쓰기")
+  echo "cover menu=$CV" >> $LOG
+  [ -n "$CV" ] && adb shell input tap $CV
+  sleep 2
+  dump cv1
+  shot 120-cover-folder
+  CF=$(ui shots/cv1.xml descprefix "폴더 (커버 폴더")
+  echo "cover folder icon=$CF desc=$(grep -o 'content-desc="폴더 (커버[^"]*"' shots/cv1.xml)" >> $LOG
+  if [ -n "$CF" ]; then
+    adb logcat -c
+    adb shell input tap $CF
+    sleep 3
+    echo "after tap: top=$(top_activity)" >> $LOG
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    set -- $CF
+    adb shell input swipe $1 $2 $1 $(( $2 - 600 )) 250
+    sleep 2
+    dump cv2
+    shot 121-cover-folder-swipe
+    echo "after swipe up: folder window open=$(grep -c 'class="android.widget.EditText"' shots/cv2.xml) drawer open=$(grep -c '앱 검색' shots/cv2.xml)" >> $LOG
+    adb logcat -d | grep -E "cover folder (tap|swipe)" | tail -3 >> $LOG
+    adb shell input keyevent KEYCODE_BACK
+    sleep 1
+    long_menu $CF
+    OFF=$(ui shots/lm.xml text "커버 폴더 끄기")
+    [ -n "$OFF" ] && adb shell input tap $OFF
+    sleep 2
+  fi
+fi
+
+# 2) a home icon's own swipe up: Settings -> Chrome
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+P=$(home_icon "Settings")
+echo "settings icon=$P" >> $LOG
+if [ -n "$P" ]; then
+  long_menu $P
+  SW=$(ui shots/lm.xml textprefix "위로 쓸면")
+  echo "swipe menu=$SW ($(grep -o 'text="위로 쓸면[^"]*"' shots/lm.xml))" >> $LOG
+  if [ -n "$SW" ]; then
+    adb shell input tap $SW
+    sleep 1
+    dump sw1
+    PICK=$(ui shots/sw1.xml text "앱 고르기…")
+    [ -n "$PICK" ] && adb shell input tap $PICK
+    sleep 2
+    CH=$(find_scroll "Chrome")
+    echo "chrome in the list=$CH" >> $LOG
+    [ -n "$CH" ] && adb shell input tap $CH
+    sleep 2
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    adb logcat -c
+    P=$(home_icon "Settings")
+    set -- $P
+    adb shell input swipe $1 $2 $1 $(( $2 - 600 )) 250
+    sleep 4
+    echo "after swiping the icon up: top=$(top_activity)" >> $LOG
+    adb logcat -d | grep -E "icon swipe up" | tail -2 >> $LOG
+    shot 122-icon-swipe-up
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    # an empty spot still opens the drawer
+    adb shell input swipe 540 1100 540 400 250
+    sleep 2
+    dump sw2
+    echo "empty spot swipe up: drawer open=$(grep -c '앱 검색' shots/sw2.xml)" >> $LOG
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+  fi
+fi
+
+# 3) two-finger pinch on the home screen (raw multi-touch events)
+pinch() {
+  local INFO=$(adb shell getevent -pl 2>/dev/null | tr -d '\r')
+  local DEV=$(echo "$INFO" | awk '/^add device/{d=$4} /ABS_MT_POSITION_X/{print d; exit}')
+  local MAXX=$(echo "$INFO" | awk '/ABS_MT_POSITION_X/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
+  local MAXY=$(echo "$INFO" | awk '/ABS_MT_POSITION_Y/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
+  echo "touch device=$DEV max=$MAXX,$MAXY" >> $LOG
+  [ -z "$DEV" ] && return 1
+  python3 - "$DEV" "$MAXX" "$MAXY" "$1" > shots/pinch.sh <<'PY'
+import sys
+dev, mx, my, kind = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+W, H = 1080, 2400
+def sx(x): return int(x * mx / W)
+def sy(y): return int(y * my / H)
+cy = 1100
+far, near = 380, 90
+a, b = (far, near) if kind == 'in' else (near, far)
+out = []
+def ev(t, c, v): out.append(f"sendevent {dev} {t} {c} {v}")
+for slot, tid, x in ((0, 701, 540 - a), (1, 702, 540 + a)):
+    ev(3, 47, slot); ev(3, 57, tid); ev(3, 53, sx(x)); ev(3, 54, sy(cy))
+ev(1, 330, 1); ev(0, 0, 0)
+for i in range(1, 11):
+    d = a + (b - a) * i / 10
+    for slot, x in ((0, 540 - d), (1, 540 + d)):
+        ev(3, 47, slot); ev(3, 53, sx(x)); ev(3, 54, sy(cy))
+    ev(0, 0, 0)
+for slot in (0, 1):
+    ev(3, 47, slot); ev(3, 57, 4294967295)
+ev(1, 330, 0); ev(0, 0, 0)
+print("; ".join(out))
+PY
+  adb shell "$(cat shots/pinch.sh)" 2>&1 | head -3 >> $LOG
+}
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb logcat -c
+pinch in
+sleep 3
+echo "after pinch in: top=$(top_activity)" >> $LOG
+adb logcat -d | grep -E "pinch ratio|gesture pinch" | tail -3 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb logcat -c
+pinch out
+sleep 2
+adb logcat -d | grep -E "pinch ratio|gesture pinch" | tail -3 >> $LOG
+
+# 4) 아늑단 날씨: add it, find the city by name, wait for the reading
+adb logcat -c
+if add_cat_widget "아늑단 날씨"; then
+  dump wx0
+  shot 123-weather-place
+  N=$(ui shots/wx0.xml text "도시 이름으로 찾기")
+  echo "place dialog row=$N" >> $LOG
+  if [ -n "$N" ]; then
+    adb shell input tap $N
+    sleep 1
+    E=$(dump wx1; ui shots/wx1.xml classfirst android.widget.EditText)
+    [ -n "$E" ] && adb shell input tap $E
+    adb shell input text Seoul
+    OK=$(dump wx2; ui shots/wx2.xml text "확인")
+    [ -n "$OK" ] && adb shell input tap $OK
+    sleep 6
+    dump wx3
+    shot 124-weather-results
+    R=$(ui shots/wx3.xml textprefix "서울")
+    [ -z "$R" ] && R=$(ui shots/wx3.xml textprefix "Seoul")
+    echo "first result=$R ($(grep -o 'text="서울[^"]*"' shots/wx3.xml | head -2 | tr '\n' ' '))" >> $LOG
+    [ -n "$R" ] && adb shell input tap $R
+    sleep 8
+  fi
+  W=$(find_widget "아늑단 날씨")
+  dump wx4
+  shot 125-weather-widget
+  echo "weather widget=$W desc=$(grep -o 'content-desc="아늑단 날씨[^"]*"' shots/wx4.xml)" >> $LOG
+  adb logcat -d | grep -E "weather (search|place|current|[0-9.-]+,)" | tail -4 >> $LOG
+fi
+
+# 5) bigger grid (10 x 12): icons shrink to their cells
+set_slider "격자 열 수" 1.0
+set_slider "격자 행 수" 1.0
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+shot 126-grid-10x12
+adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_cols|home_rows" >> $LOG
+dump g12
+echo "home icons on the 10x12 grid: $(ui shots/g12.xml list | wc -l)" >> $LOG
+set_slider "격자 열 수" 0.2857
+set_slider "격자 행 수" 0.3333
+adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_cols|home_rows" >> $LOG
+
+# 6) unit conversion in the drawer search
+open_drawer
+S=$(dump us; ui shots/us.xml classfirst android.widget.EditText)
+[ -n "$S" ] && adb shell input tap $S
+sleep 1
+adb shell input text "10km"
+sleep 2
+dump u1
+shot 127-unit-km
+echo "unit row: $(grep -o 'content-desc="단위 변환[^"]*"' shots/u1.xml)" >> $LOG
+for i in 1 2 3 4 5 6; do adb shell input keyevent KEYCODE_DEL; done
+adb shell input text "84m2"
+sleep 2
+dump u2
+echo "unit row: $(grep -o 'content-desc="단위 변환[^"]*"' shots/u2.xml)" >> $LOG
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_BACK
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

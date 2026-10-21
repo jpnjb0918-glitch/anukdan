@@ -105,7 +105,10 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
     }
 }
 
-/** Horizontally paged container of [CellLayout]s with swipe-up/down and double-tap detection. */
+/**
+ * Horizontally paged container of [CellLayout]s with swipe-up/down, double-tap and two-finger pinch detection.
+ * A swipe up that starts on an icon goes to [Listener.onIconSwipeUp] first (위로 쓸기 / 커버 폴더).
+ */
 class PagedView(ctx: Context) : ViewGroup(ctx) {
     interface Listener {
         fun onPageChanged(page: Int)
@@ -113,6 +116,10 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
         fun onSwipeDown()
         fun onDoubleTap()
         fun onEmptyLongPress(rawX: Float, rawY: Float)
+        /** A swipe up that began on [child]; true when the icon handled it. */
+        fun onIconSwipeUp(child: View?): Boolean = false
+        fun onPinchIn() {}
+        fun onPinchOut() {}
     }
 
     var listener: Listener? = null
@@ -127,7 +134,11 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
     private var downX = 0f
     private var downY = 0f
     private var lastX = 0f
-    private var mode = 0 // 0 undecided, 1 horizontal, 2 vertical
+    private var mode = 0 // 0 undecided, 1 horizontal, 2 vertical, 3 two-finger pinch
+    /** The icon (or widget) under the finger when the touch began. */
+    private var downChild: View? = null
+    private var pinchStart = 0f
+    private var pinchNow = 0f
 
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
@@ -179,6 +190,34 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
         v.addMovement(ev)
     }
 
+    private fun childAt(x: Float, y: Float): View? {
+        if (currentPage !in 0 until pageCount) return null
+        val p = page(currentPage)
+        val lx = x + scrollX - p.left
+        val ly = y - p.top
+        for (i in p.childCount - 1 downTo 0) {
+            val c = p.getChildAt(i)
+            if (lx >= c.left && lx < c.right && ly >= c.top && ly < c.bottom) return c
+        }
+        return null
+    }
+
+    private fun span(ev: MotionEvent): Float =
+        if (ev.pointerCount < 2) 0f else kotlin.math.hypot(ev.getX(0) - ev.getX(1), ev.getY(0) - ev.getY(1))
+
+    private fun startPinch(ev: MotionEvent) {
+        mode = 3
+        pinchStart = span(ev)
+        pinchNow = pinchStart
+    }
+
+    private fun endPinch() {
+        val r = if (pinchStart > 0f) pinchNow / pinchStart else 1f
+        if (LauncherApp.debug) LauncherApp.dlog("pinch ratio ${"%.2f".format(r)}")
+        if (r < 0.75f) listener?.onPinchIn() else if (r > 1.33f) listener?.onPinchOut()
+        pinchStart = 0f
+    }
+
     private fun decide(ev: MotionEvent): Boolean {
         val dx = ev.x - downX
         val dy = ev.y - downY
@@ -191,10 +230,12 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = ev.x; downY = ev.y; lastX = ev.x; mode = 0
+                downChild = childAt(ev.x, ev.y)
                 velocity?.clear()
                 track(ev)
                 if (!scroller.isFinished) { scroller.abortAnimation(); mode = 1; return true }
             }
+            MotionEvent.ACTION_POINTER_DOWN -> if (mode == 0 || mode == 2) { startPinch(ev); return true }
             MotionEvent.ACTION_MOVE -> {
                 track(ev)
                 if (mode == 0 && decide(ev)) return true
@@ -209,9 +250,14 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = ev.x; downY = ev.y; lastX = ev.x; mode = 0
+                downChild = childAt(ev.x, ev.y)
                 if (!scroller.isFinished) { scroller.abortAnimation(); mode = 1 }
             }
+            MotionEvent.ACTION_POINTER_DOWN -> if (mode == 0 || mode == 2) startPinch(ev)
+            MotionEvent.ACTION_POINTER_UP -> if (mode == 3) { endPinch(); mode = 4 } // the rest of this touch does nothing
             MotionEvent.ACTION_MOVE -> {
+                if (mode == 3) { if (ev.pointerCount >= 2) pinchNow = span(ev); return true }
+                if (mode == 4) return true
                 if (mode == 0) decide(ev)
                 if (mode == 1) {
                     val dx = lastX - ev.x
@@ -251,15 +297,18 @@ class PagedView(ctx: Context) : ViewGroup(ctx) {
                 } else if (mode == 2) {
                     val dy = ev.y - downY
                     val threshold = dpx(56f)
-                    if (dy < -threshold || vy < -1500f) listener?.onSwipeUp()
-                    else if (dy > threshold || vy > 1500f) listener?.onSwipeDown()
-                }
+                    if (dy < -threshold || vy < -1500f) {
+                        if (listener?.onIconSwipeUp(downChild) != true) listener?.onSwipeUp()
+                    } else if (dy > threshold || vy > 1500f) listener?.onSwipeDown()
+                } else if (mode == 3) endPinch()
                 mode = 0
+                downChild = null
                 velocity?.recycle(); velocity = null
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (mode == 1) snapToPage(((scrollX.toFloat() / maxOf(1, width))).roundToInt())
                 mode = 0
+                downChild = null
                 velocity?.recycle(); velocity = null
             }
         }
