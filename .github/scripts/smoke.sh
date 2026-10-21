@@ -1714,23 +1714,26 @@ sleep 2
 
 # 3b) a tap right after a page turn (while the page still slides) finishes the turn, not stuck half-way
 if [ -n "$TDEV" ]; then
-  python3 - "$TDEV" "$TMAXX" "$TMAXY" > shots/tap.sh <<'PY'
-import sys
-dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+  # sendevent starts one process per event, too slow to tap while the page still slides (280 ms):
+  # write the raw input_event records (24 bytes each on this 64-bit image) straight to the device instead
+  python3 - "$TMAXX" "$TMAXY" shots/swipe.bin shots/tap.bin <<'PY'
+import struct, sys
+mx, my = int(sys.argv[1]), int(sys.argv[2])
 def sx(x): return int(x * mx / 1080)
 def sy(y): return int(y * my / 2400)
-out = []
-def ev(t, c, v): out.append(f"sendevent {dev} {t} {c} {v}")
-# a sideways swipe (900 -> 150) and, as soon as the finger lifts, a tap: all raw events from one root shell,
-# so the tap lands while the page is still sliding (the slide takes 280 ms)
-ev(3, 47, 0); ev(3, 57, 811); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(900)); ev(3, 54, sy(1200)); ev(0, 0, 0)
+def ev(t, c, v): return struct.pack('<qqHHi', 0, 0, t, c, v)
+def finger_down(tid, x, y): return [ev(3, 47, 0), ev(3, 57, tid), ev(3, 58, 512), ev(3, 48, 8), ev(3, 53, sx(x)), ev(3, 54, sy(y)), ev(0, 0, 0)]
+lift = [ev(3, 58, 0), ev(3, 57, -1), ev(0, 0, 0)]
+swipe = finger_down(811, 900, 1200)
 for i in range(1, 9):
-    ev(3, 53, sx(900 - 750 * i / 8)); ev(0, 0, 0)
-ev(3, 58, 0); ev(3, 57, 4294967295); ev(0, 0, 0)
-ev(3, 57, 812); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(540)); ev(3, 54, sy(1250)); ev(0, 0, 0)
-ev(3, 58, 0); ev(3, 57, 4294967295); ev(0, 0, 0)
-print("\n".join(out))
+    swipe += [ev(3, 53, sx(900 - 750 * i / 8)), ev(0, 0, 0)]
+swipe += lift
+open(sys.argv[3], 'wb').write(b''.join(swipe))
+open(sys.argv[4], 'wb').write(b''.join(finger_down(812, 540, 1250) + lift))
 PY
+  adb push shots/swipe.bin /data/local/tmp/swipe.bin > /dev/null
+  adb push shots/tap.bin /data/local/tmp/tap.bin > /dev/null
+  printf 'cat /data/local/tmp/swipe.bin > %s\ncat /data/local/tmp/tap.bin > %s\n' "$TDEV" "$TDEV" > shots/tap.sh
   adb logcat -c
   root_sh shots/tap.sh
   sleep 2
