@@ -1608,26 +1608,46 @@ fi
 # runs a pushed script as root (writing raw touch events needs it; the google_apis image is userdebug): su, else adb root
 root_sh() {
   adb push "$1" /data/local/tmp/raw.sh > /dev/null
-  local R=$(adb shell su 0 sh /data/local/tmp/raw.sh 2>&1 | tr -d '\r' | head -3)
+  local R=$(adb shell su 0 sh /data/local/tmp/raw.sh 2>&1 < /dev/null | tr -d '\r' | head -3)
   [ -z "$R" ] && return 0
   echo "su: $R" >> $LOG
   adb root > /dev/null 2>&1
   adb wait-for-device
   sleep 2
-  R=$(adb shell sh /data/local/tmp/raw.sh 2>&1 | tr -d '\r' | head -3)
+  R=$(adb shell sh /data/local/tmp/raw.sh 2>&1 < /dev/null | tr -d '\r' | head -3)
   echo "adb root: ${R:-ok}" >> $LOG
 }
-touch_info() {
-  local INFO=$(adb shell getevent -pl 2>/dev/null | tr -d '\r')
-  TDEV=$(echo "$INFO" | awk '/^add device/{d=$4} /ABS_MT_POSITION_X/{print d; exit}')
-  TMAXX=$(echo "$INFO" | awk '/ABS_MT_POSITION_X/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
-  TMAXY=$(echo "$INFO" | awk '/ABS_MT_POSITION_Y/{for(i=1;i<=NF;i++) if($i=="max"){print $(i+1); exit}}' | tr -d ',')
-  echo "touch device=$TDEV max=$TMAXX,$TMAXY" >> $LOG
-  [ -n "$TDEV" ]
+# the emulator has one touch device per possible display: list them as "path maxX maxY name", display 0's first
+touch_devices() {
+  adb shell getevent -pl 2>/dev/null | tr -d '\r' > shots/getevent.txt
+  python3 - shots/getevent.txt > shots/touchdevs.txt <<'PY'
+import re, sys
+devs, cur = [], None
+for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
+    m = re.match(r'add device \d+: (\S+)', line)
+    if m:
+        cur = {'path': m.group(1), 'name': '', 'mx': 0, 'my': 0}
+        devs.append(cur)
+        continue
+    if cur is None:
+        continue
+    m = re.match(r'\s*name:\s*"(.*)"', line)
+    if m:
+        cur['name'] = m.group(1)
+    for k, axis in (('mx', 'ABS_MT_POSITION_X'), ('my', 'ABS_MT_POSITION_Y')):
+        m = re.search(axis + r'\s*:.*?max (\d+)', line)
+        if m:
+            cur[k] = int(m.group(1))
+def order(d):
+    n = re.search(r'(\d+)$', d['name'])
+    return (int(n.group(1)) if n else 0, int(re.search(r'(\d+)$', d['path']).group(1)))
+for d in sorted((d for d in devs if d['mx'] and d['my']), key=order):
+    print(d['path'], d['mx'], d['my'], d['name'].replace(' ', '_') or '-')
+PY
+  echo "touch devices: $(awk '{print $1"("$4")"}' shots/touchdevs.txt | head -6 | tr '\n' ' ')" >> $LOG
 }
-pinch() {
-  touch_info || return 1
-  python3 - "$TDEV" "$TMAXX" "$TMAXY" "$1" > shots/pinch.sh <<'PY'
+pinch_script() {
+  python3 - "$1" "$2" "$3" "$4" > shots/pinch.sh <<'PY'
 import sys
 dev, mx, my, kind = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
 W, H = 1080, 2400
@@ -1651,46 +1671,66 @@ for slot in (0, 1):
 ev(1, 330, 0); ev(0, 0, 0)
 print("\n".join(out))
 PY
-  root_sh shots/pinch.sh
+}
+# pinch "in" or "out"; tries the touch devices in order until the launcher sees the pinch, then keeps that one (TDEV)
+TDEV=""
+pinch() {
+  [ -s shots/touchdevs.txt ] || touch_devices
+  local tried=0 D MX MY NAME
+  while read -r D MX MY NAME <&3; do
+    [ -n "$TDEV" ] && [ "$D" != "$TDEV" ] && continue
+    pinch_script "$D" "$MX" "$MY" "$1"
+    adb logcat -c
+    root_sh shots/pinch.sh
+    sleep 2
+    if adb logcat -d | grep -q "pinch ratio"; then
+      TDEV=$D; TMAXX=$MX; TMAXY=$MY
+      echo "pinch $1 seen from $D ($NAME)" >> $LOG
+      return 0
+    fi
+    echo "no pinch seen from $D ($NAME)" >> $LOG
+    tried=$((tried + 1))
+    [ $tried -ge 4 ] && break
+  done 3< shots/touchdevs.txt
+  return 1
 }
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-adb logcat -c
 pinch in
-sleep 3
+sleep 2
 echo "after pinch in: top=$(top_activity)" >> $LOG
 adb logcat -d | grep -E "pinch ratio|gesture pinch" | tail -3 >> $LOG
+shot 122a-after-pinch-in
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-adb logcat -c
 pinch out
-sleep 2
+sleep 1
+echo "after pinch out: top=$(top_activity)" >> $LOG
 adb logcat -d | grep -E "pinch ratio|gesture pinch" | tail -3 >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
 
 # 3b) a tap right after a page turn (while the page still slides) finishes the turn, not stuck half-way
-adb shell input keyevent KEYCODE_HOME
-sleep 2
-if touch_info; then
+if [ -n "$TDEV" ]; then
   python3 - "$TDEV" "$TMAXX" "$TMAXY" > shots/tap.sh <<'PY'
 import sys
 dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 x, y = int(540 * mx / 1080), int(1250 * my / 2400)
 e = [(3, 47, 0), (3, 57, 801), (3, 53, x), (3, 54, y), (1, 330, 1), (0, 0, 0), (3, 57, 4294967295), (1, 330, 0), (0, 0, 0)]
+# the swipe and the tap in one root shell, so the tap lands while the page is still sliding
+print("input swipe 900 1200 150 1200 120")
 print("\n".join(f"sendevent {dev} {t} {c} {v}" for t, c, v in e))
 PY
-  # make the root shell ready first, so the tap goes out right after the swipe
-  root_sh shots/tap.sh
-  sleep 2
-  adb shell input keyevent KEYCODE_HOME
-  sleep 2
   adb logcat -c
-  adb shell "input swipe 900 1200 150 1200 120; su 0 sh /data/local/tmp/raw.sh 2>/dev/null || sh /data/local/tmp/raw.sh"
+  root_sh shots/tap.sh
   sleep 2
   adb logcat -d | grep -E "page swipe:|page settle|home page ->" | tr -s ' ' | cut -d' ' -f6- >> $LOG
   shot 122b-tap-during-page-turn
   echo "after the tap: top=$(top_activity)" >> $LOG
   adb shell input keyevent KEYCODE_HOME
   sleep 2
+else
+  echo "tap during page turn: skipped (no touch device took the raw events)" >> $LOG
 fi
 
 # 4) 아늑단 날씨: add it, find the city by name, wait for the reading
