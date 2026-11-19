@@ -68,6 +68,12 @@ elif mode == 'below':
             if y1 > int(sys.argv[4]):
                 print(x1, y1, x2, y2)
                 break
+elif mode == 'idtext':
+    # the text of the first node with resource-id argv[3] (e.g. android:id/message of a dialog)
+    for n in ET.parse(path).iter('node'):
+        if n.get('resource-id') == sys.argv[3]:
+            print(n.get('text'))
+            break
 elif mode == 'count':
     # number of nodes of a class, e.g. icon cells in a grid
     print(sum(1 for n in ET.parse(path).iter('node') if n.get('class') == sys.argv[3]))

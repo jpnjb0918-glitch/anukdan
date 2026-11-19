@@ -28,6 +28,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -108,6 +109,7 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     override fun onDestroy() {
+        closeUndo()
         movingBg.release()
         if (Build.VERSION.SDK_INT >= 27) {
             try { android.app.WallpaperManager.getInstance(this).removeOnColorsChangedListener(wallpaperColors) } catch (_: Exception) { }
@@ -125,6 +127,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onStop() {
         super.onStop()
+        closeUndo()
         HiddenLock.relock()
         try { widgetHost.stopListening() } catch (_: Exception) { }
     }
@@ -329,6 +332,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
         val cur = workspace.currentPage
         workspace.wrap = prefs.infiniteScroll
+        workspace.effect = prefs.pageEffect
         workspace.removeAllViews()
         for (i in 0 until model.pageCount) workspace.addView(newPage(i))
 
@@ -490,6 +494,9 @@ class HomeActivity : Activity(), PagedView.Listener {
                 CatWidgets.WEB -> if ((v as? WebSearchWidget)?.micHit() == true) voiceSearch() else
                     Dialogs.webSearch(this) { q -> if (!WebSearch.open(this, q)) toast("검색할 앱이 없어요") }
                 CatWidgets.MEMO -> editMemo(item)
+                CatWidgets.DDAY -> editDday(item)
+                CatWidgets.FOCUS -> toggleFocus(item)
+                CatWidgets.WATER -> addWater(item, v, +1)
                 CatWidgets.BATTERY -> openSystem(Intent(Intent.ACTION_POWER_USAGE_SUMMARY), "배터리 화면을 열 수 없어요")
                 CatWidgets.WEATHER -> if (item.provider.isEmpty()) chooseWeatherPlace(item) else {
                     Weather.refresh(item.provider, force = true)
@@ -523,6 +530,61 @@ class HomeActivity : Activity(), PagedView.Listener {
             LauncherApp.dlog("memo widget ${item.id}: ${text.length} chars")
             bindAll()
         }
+    }
+
+    // ------------------------------------------------------------ 디데이 · 집중 타이머 · 물 마시기
+    private fun editDday(item: HomeItem) {
+        Dialogs.askText(this, "디데이 이름 (예: 여행, 시험)", item.title) { name ->
+            val cur = try { java.time.LocalDate.parse(item.provider) } catch (_: Exception) { java.time.LocalDate.now() }
+            android.app.DatePickerDialog(this, { _, y, m, d ->
+                item.title = name.trim()
+                item.provider = java.time.LocalDate.of(y, m + 1, d).toString()
+                model.save()
+                LauncherApp.dlog("dday ${item.id}: '${item.title}' ${item.provider}")
+                bindAll()
+            }, cur.year, cur.monthValue - 1, cur.dayOfMonth).show()
+        }
+    }
+
+    private fun toggleFocus(item: HomeItem) {
+        val end = item.provider.toLongOrNull() ?: 0L
+        if (end > System.currentTimeMillis()) {
+            AlertDialog.Builder(this).setTitle("집중 타이머").setMessage("집중을 그만할까요?")
+                .setPositiveButton("그만하기") { _, _ -> stopFocus(item) }
+                .setNegativeButton("계속하기", null).show()
+            return
+        }
+        item.provider = (System.currentTimeMillis() + CatWidgets.FOCUS_MS).toString()
+        model.save()
+        bindAll()
+        LauncherApp.dlog("focus started: 25 min")
+        // the clock app's timer rings at the end even when the launcher is in the background
+        val timer = Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
+            .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, (CatWidgets.FOCUS_MS / 1000).toInt())
+            .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "아늑단 집중 끝")
+            .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+        try {
+            startActivity(timer.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            toast("25분 집중 시작! 끝나면 시계 앱 타이머가 울려요")
+        } catch (_: Exception) {
+            toast("25분 집중 시작! (시계 앱이 없어서 끝날 때 소리는 안 나요)")
+        }
+    }
+
+    private fun stopFocus(item: HomeItem) {
+        item.provider = ""
+        model.save()
+        bindAll()
+        LauncherApp.dlog("focus stopped")
+        toast("집중을 멈췄어요. 시계 앱의 타이머는 시계 앱에서 꺼 주세요", long = true)
+    }
+
+    private fun addWater(item: HomeItem, v: View?, delta: Int) {
+        val n = maxOf(0, CatWidgets.countToday(item.title) + delta)
+        item.title = CatWidgets.withCount(n)
+        model.save()
+        LauncherApp.dlog("water ${item.id}: $n/${item.provider.ifEmpty { "8" }}")
+        if (v != null) v.invalidate() else bindAll()
     }
 
     /** Puts a built-in 아늑단 widget on the current page (or the first page with room). */
@@ -669,8 +731,94 @@ class HomeActivity : Activity(), PagedView.Listener {
     }
 
     private fun removeItemNoSave(item: HomeItem) {
-        if (item.type == HomeItem.TYPE_WIDGET) try { widgetHost.deleteAppWidgetId(item.widgetId) } catch (_: Exception) { }
+        offerUndo(item)
+        // a system widget's id is only given back once 되돌리기 is no longer offered
+        if (item.type == HomeItem.TYPE_WIDGET) pendingWidgetDeletes += item.widgetId
         model.removeItem(item)
+    }
+
+    // ------------------------------------------------------------ 되돌리기 after removing something (Nova's undo bar)
+    private var undoBar: View? = null
+    private var undoSnapshot: org.json.JSONObject? = null
+    private var undoSaves = -1
+    private val pendingWidgetDeletes = ArrayList<Int>()
+    private val undoTimeout = Runnable { closeUndo() }
+
+    /** Remembers the layout as it was, and shows the bar once the removal has been saved. */
+    private fun offerUndo(item: HomeItem) {
+        closeUndo()
+        undoSnapshot = model.toJson()
+        val what = when (item.type) {
+            HomeItem.TYPE_FOLDER -> "폴더를"
+            HomeItem.TYPE_WIDGET, HomeItem.TYPE_CAT_WIDGET -> "위젯을"
+            else -> "'" + (apps.find(item.key)?.label ?: item.title) + "'을(를)"
+        }
+        mainHandler.post { showUndo("$what 지웠어요") }
+    }
+
+    private fun showUndo(text: String) {
+        if (undoSnapshot == null || isFinishing) return
+        undoSaves = model.saves
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18f), dp(6f), dp(6f), dp(6f))
+            background = Palette.rounded(0xEE1E2B2C.toInt(), dp(22f).toFloat())
+            elevation = dp(6f).toFloat()
+        }
+        bar.addView(TextView(this).apply {
+            this.text = text
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            Fonts.apply(this)
+            maxLines = 2
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(TextView(this).apply {
+            this.text = "되돌리기"
+            textSize = 14f
+            setTextColor(0xFF7FE6E4.toInt())
+            typeface = Fonts.regular(bold = true)
+            setPadding(dp(14f), dp(10f), dp(14f), dp(10f))
+            contentDescription = "되돌리기"
+            isClickable = true
+            setOnClickListener { undoRemove() }
+        })
+        dragLayer.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(dp(16f), 0, dp(16f), insetBottom + dp(104f))
+        })
+        bar.alpha = 0f
+        bar.animate().alpha(1f).setDuration(150).start()
+        undoBar = bar
+        mainHandler.postDelayed(undoTimeout, 5000)
+        LauncherApp.dlog("undo offered: $text")
+    }
+
+    /** The bar goes away; whatever was removed stays removed (system widget ids are given back now). */
+    private fun closeUndo() {
+        mainHandler.removeCallbacks(undoTimeout)
+        undoBar?.let { dragLayer.removeView(it) }
+        undoBar = null
+        undoSnapshot = null
+        for (id in pendingWidgetDeletes) try { widgetHost.deleteAppWidgetId(id) } catch (_: Exception) { }
+        pendingWidgetDeletes.clear()
+    }
+
+    private fun undoRemove() {
+        val snap = undoSnapshot ?: return
+        if (model.saves != undoSaves) {
+            toast("그사이 홈 화면이 바뀌어서 되돌릴 수 없어요")
+            closeUndo()
+            return
+        }
+        pendingWidgetDeletes.clear() // the widgets come back, so their ids stay
+        model.fromJson(snap)
+        model.save()
+        undoSnapshot = null
+        closeUndo()
+        bindAll()
+        toast("되돌렸어요")
+        LauncherApp.dlog("undo: layout restored (${model.items.size} items)")
     }
 
     fun openDrawer(focusSearch: Boolean) {
@@ -710,6 +858,10 @@ class HomeActivity : Activity(), PagedView.Listener {
             "drawer" -> openDrawer(false)
             "search" -> openDrawer(true)
             "notifications" -> expandNotifications()
+            "quick_settings" -> expandQuickSettings()
+            "first_page" -> workspace.snapToPage(0)
+            "voice_search" -> voiceSearch()
+            "web_search" -> Dialogs.webSearch(this) { q -> if (!WebSearch.open(this, q)) toast("검색할 앱이 없어요") }
             "screen_off" -> lockScreen()
             "widgets" -> pickWidget()
             "settings" -> startActivity(Intent(this, SettingsActivity::class.java))
@@ -724,6 +876,16 @@ class HomeActivity : Activity(), PagedView.Listener {
             Class.forName("android.app.StatusBarManager").getMethod("expandNotificationsPanel").invoke(sbm)
         } catch (_: Throwable) {
             toast("이 기기에서는 알림창 열기를 지원하지 않아요")
+        }
+    }
+
+    @SuppressLint("WrongConstant", "PrivateApi")
+    private fun expandQuickSettings() {
+        try {
+            val sbm = getSystemService("statusbar")
+            Class.forName("android.app.StatusBarManager").getMethod("expandSettingsPanel").invoke(sbm)
+        } catch (_: Throwable) {
+            toast("이 기기에서는 빠른 설정 열기를 지원하지 않아요")
         }
     }
 
@@ -751,6 +913,11 @@ class HomeActivity : Activity(), PagedView.Listener {
     override fun onDoubleTap() = runAction(prefs.gestureDouble, prefs.gestureDoubleApp)
     override fun onPinchIn() { LauncherApp.dlog("gesture pinch in -> ${prefs.gesturePinchIn}"); runAction(prefs.gesturePinchIn, prefs.gesturePinchInApp) }
     override fun onPinchOut() { LauncherApp.dlog("gesture pinch out -> ${prefs.gesturePinchOut}"); runAction(prefs.gesturePinchOut, prefs.gesturePinchOutApp) }
+    override fun onTwoFingerSwipe(up: Boolean) {
+        val action = if (up) prefs.gestureTwoUp else prefs.gestureTwoDown
+        LauncherApp.dlog("gesture two-finger ${if (up) "up" else "down"} -> $action")
+        if (up) runAction(prefs.gestureTwoUp, prefs.gestureTwoUpApp) else runAction(prefs.gestureTwoDown, prefs.gestureTwoDownApp)
+    }
 
     /** 위로 쓸기 on a home/dock icon: its own app, or the folder behind a 커버 폴더. False = not an icon with a swipe. */
     override fun onIconSwipeUp(child: View?): Boolean {
@@ -780,10 +947,18 @@ class HomeActivity : Activity(), PagedView.Listener {
         if (!locked && model.pageCount > 1 && model.items.none { it.container == HomeItem.DESKTOP && it.screen == cur }) {
             entries += MenuEntry("이 페이지 삭제") { model.deletePage(cur); model.save(); bindAll() }
         }
+        if (!locked) {
+            entries += MenuEntry("홈 화면 정리") { Tidy.ask(this) { bindAll() } }
+            if (Tidy.undoDaysLeft(prefs) > 0) entries += MenuEntry("정리 되돌리기") { undoTidy() }
+        }
         if (locked) entries += MenuEntry("배치 잠금 풀기") { prefs.lockLayout = false; toast("홈 화면 배치 잠금을 풀었어요") }
         entries += MenuEntry("런처 설정") { startActivity(Intent(this, SettingsActivity::class.java)) }
         dragLayer.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         showPopupAt(Rect(rawX.toInt(), rawY.toInt(), rawX.toInt(), rawY.toInt()), entries)
+    }
+
+    private fun undoTidy() {
+        if (Tidy.undo(model, prefs)) { bindAll(); toast("정리하기 전으로 되돌렸어요") } else toast("되돌릴 정리가 없어요")
     }
 
     // ------------------------------------------------------------ long press / popup / drag
@@ -819,6 +994,25 @@ class HomeActivity : Activity(), PagedView.Listener {
             item?.type == HomeItem.TYPE_CAT_WIDGET -> {
                 when (item.key) {
                     CatWidgets.MEMO -> list += MenuEntry("메모 쓰기") { editMemo(item) }
+                    CatWidgets.DDAY -> list += MenuEntry("디데이 바꾸기") { editDday(item) }
+                    CatWidgets.FOCUS -> {
+                        if ((item.provider.toLongOrNull() ?: 0L) > System.currentTimeMillis()) list += MenuEntry("집중 그만하기") { stopFocus(item) }
+                        list += MenuEntry("오늘 횟수 지우기") { item.title = ""; model.save(); bindAll() }
+                    }
+                    CatWidgets.WATER -> {
+                        list += MenuEntry("한 잔 빼기") { addWater(item, null, -1) }
+                        list += MenuEntry("목표: ${item.provider.ifEmpty { "8" }}잔") {
+                            val opts = (4..12).toList()
+                            val cur = item.provider.toIntOrNull() ?: 8
+                            AlertDialog.Builder(this).setTitle("하루 목표 잔 수")
+                                .setSingleChoiceItems(opts.map { "${it}잔" }.toTypedArray(), opts.indexOf(cur)) { d, which ->
+                                    d.dismiss()
+                                    item.provider = opts[which].toString()
+                                    model.save(); bindAll()
+                                }.setNegativeButton("취소", null).show()
+                        }
+                        list += MenuEntry("오늘 기록 지우기") { item.title = ""; model.save(); bindAll() }
+                    }
                     CatWidgets.WEATHER -> {
                         list += MenuEntry("날씨 지역 바꾸기") { chooseWeatherPlace(item) }
                         if (item.provider.isNotEmpty()) list += MenuEntry("날씨 새로 받기") {
@@ -1109,7 +1303,14 @@ class HomeActivity : Activity(), PagedView.Listener {
         closePopup()
         closeFolder()
         closeDrawer(wasFocused)
-        if (wasFocused && !hadOverlay) workspace.snapToPage(0)
+        if (wasFocused && !hadOverlay) {
+            // 홈 버튼: back to the first page; pressed again there, the chosen action (Nova's "home button action")
+            if (workspace.currentPage != 0 || prefs.homeButton == "none") workspace.snapToPage(0)
+            else {
+                LauncherApp.dlog("home button on the first page -> ${prefs.homeButton}")
+                runAction(prefs.homeButton, prefs.homeButtonApp)
+            }
+        }
     }
 
     companion object {

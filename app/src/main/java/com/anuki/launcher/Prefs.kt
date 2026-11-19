@@ -43,10 +43,12 @@ class Prefs(ctx: Context) {
     var lockLayout by boolPref("lock_layout", false)          // 홈 화면 배치 잠금
     var autoAddApps by boolPref("auto_add_apps", false)       // 새로 설치한 앱을 홈 화면에 추가
     var infiniteScroll by boolPref("infinite_scroll", false)  // 마지막 페이지 다음은 첫 페이지
+    var pageEffect by strPref("page_effect", "")              // 페이지 넘김 효과, see PageEffects
     var hideStatusBar by boolPref("hide_status_bar", false)
     var searchContacts by boolPref("search_contacts", false)  // 앱 서랍 검색에 연락처
     var lockHidden by boolPref("lock_hidden", false)          // 숨긴 앱은 지문·PIN 뒤에
     var searchEngine by strPref("search_engine", "")          // 인터넷 검색: "" 휴대폰 기본 검색 앱, naver, google, daum, bing
+    var tidyUndo by strPref("tidy_undo", "")                  // 홈 화면 정리 되돌리기 (Tidy): where things were, JSON
 
     // drawer
     var drawerCols by intPref("drawer_cols", 5)
@@ -54,6 +56,7 @@ class Prefs(ctx: Context) {
     var drawerStyle by strPref("drawer_style", "grid")  // grid | pages | list | sections
     var drawerSort by strPref("drawer_sort", "name")    // name | recent | usage
     var drawerBg by strPref("drawer_bg", "solid")       // solid | glass | wallpaper
+    var drawerSuggest by boolPref("drawer_suggest", true) // 맨 위에 자주 쓰는 앱 한 줄
 
     fun launchCount(key: String): Int = usage.getInt(key, 0)
     fun countLaunch(key: String) { usage.edit().putInt(key, launchCount(key) + 1).apply() }
@@ -84,6 +87,12 @@ class Prefs(ctx: Context) {
     var gesturePinchOut by strPref("g_pinch_out", "none")     // 두 손가락 벌리기
     var gesturePinchInApp by strPref("g_pinch_in_app", "")
     var gesturePinchOutApp by strPref("g_pinch_out_app", "")
+    var gestureTwoUp by strPref("g_two_up", "none")                // 두 손가락 위로 쓸기
+    var gestureTwoDown by strPref("g_two_down", "quick_settings")  // 두 손가락 아래로 쓸기
+    var gestureTwoUpApp by strPref("g_two_up_app", "")
+    var gestureTwoDownApp by strPref("g_two_down_app", "")
+    var homeButton by strPref("home_button", "none")               // 첫 페이지에서 홈 버튼을 또 누르면
+    var homeButtonApp by strPref("home_button_app", "")
 
     var firstRunDone: Boolean
         get() = sp.getBoolean("first_run", false)

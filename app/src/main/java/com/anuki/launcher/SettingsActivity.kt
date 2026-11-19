@@ -64,6 +64,15 @@ class SettingsActivity : Activity() {
         switch("새 앱을 홈 화면에 추가", "새로 설치한 앱의 아이콘을 홈 화면 빈자리에 놓아요", prefs.autoAddApps) { prefs.autoAddApps = it }
         switch("무한 스크롤", "마지막 페이지에서 넘기면 첫 페이지로 돌아가요", prefs.infiniteScroll) { prefs.infiniteScroll = it }
         switch("상태 표시줄 숨기기", "홈 화면에서 시계·배터리 줄을 숨겨요 (위 끝에서 쓸어내리면 잠깐 보여요)", prefs.hideStatusBar) { prefs.hideStatusBar = it }
+        choice("페이지 넘김 효과", PageEffects.ALL, prefs.pageEffect) { prefs.pageEffect = it }
+        action("홈 화면 정리", "홈 화면의 앱을 종류별 폴더(게임·소셜·사진 등)로 묶어요 · 바뀌는 모습을 먼저 보여 줘요") {
+            if (prefs.lockLayout) this.toast("홈 화면 배치 잠금을 먼저 풀어 주세요") else Tidy.ask(this) { build() }
+        }
+        val tidyLeft = Tidy.undoDaysLeft(prefs)
+        if (tidyLeft > 0) action("홈 화면 정리 되돌리기", "정리하기 전 배치로 돌아가요 · ${tidyLeft}일 남았어요") {
+            if (Tidy.undo(model, prefs)) this.toast("정리하기 전으로 되돌렸어요")
+            build()
+        }
 
         section("앱 서랍")
         choice("서랍 형식", listOf(
@@ -77,6 +86,7 @@ class SettingsActivity : Activity() {
         choice("서랍 배경", listOf("solid" to "테마 색", "glass" to "반투명", "wallpaper" to "배경화면 보이게"), prefs.drawerBg) { prefs.drawerBg = it }
         seek("열 수", 3, 7, prefs.drawerCols, { "${it}칸" }) { prefs.drawerCols = it }
         switch("아이콘 이름 표시", "목록 형식에서는 항상 이름이 보여요", prefs.drawerLabels) { prefs.drawerLabels = it }
+        switch("자주 쓰는 앱 줄", "앱 서랍 맨 위에 많이 연 앱을 한 줄로 보여 줘요", prefs.drawerSuggest) { prefs.drawerSuggest = it }
         note("'가나다 묶음'은 항상 이름순이에요. '많이 연 순'은 아늑이 런처에서 앱을 연 횟수로 정해져요(이번 버전부터 세기 시작해요).")
         action("탭 관리", "${prefs.tabs().size}개 · 탭마다 앱을 골라 묶어요") { Dialogs.editTabs(this) { build() } }
         action("숨긴 앱", "${prefs.hidden.size}개 · 검색하면 숨긴 앱도 나와요" + if (prefs.lockHidden) " (지문·PIN 확인 뒤)" else "") {
@@ -154,6 +164,10 @@ class SettingsActivity : Activity() {
         gesture("두 번 탭", prefs.gestureDouble, prefs.gestureDoubleApp) { a, k -> prefs.gestureDoubleApp = k; prefs.gestureDouble = a }
         gesture("두 손가락 오므리기", prefs.gesturePinchIn, prefs.gesturePinchInApp) { a, k -> prefs.gesturePinchInApp = k; prefs.gesturePinchIn = a }
         gesture("두 손가락 벌리기", prefs.gesturePinchOut, prefs.gesturePinchOutApp) { a, k -> prefs.gesturePinchOutApp = k; prefs.gesturePinchOut = a }
+        gesture("두 손가락 위로 쓸기", prefs.gestureTwoUp, prefs.gestureTwoUpApp) { a, k -> prefs.gestureTwoUpApp = k; prefs.gestureTwoUp = a }
+        gesture("두 손가락 아래로 쓸기", prefs.gestureTwoDown, prefs.gestureTwoDownApp) { a, k -> prefs.gestureTwoDownApp = k; prefs.gestureTwoDown = a }
+        gesture("홈 버튼 (첫 페이지에서)", prefs.homeButton, prefs.homeButtonApp) { a, k -> prefs.homeButtonApp = k; prefs.homeButton = a }
+        note("홈 버튼: 다른 페이지에 있을 때 누르면 첫 페이지로 가고, 첫 페이지에서 한 번 더 누르면 고른 동작을 해요.")
         note("아이콘 하나만 따로: 홈 화면 아이콘을 길게 눌러 '위로 쓸면'에서 그 아이콘을 위로 쓸 때 열 앱을 고를 수 있어요. 폴더는 '커버 폴더로 쓰기'를 켜면 탭하면 첫 앱, 위로 쓸면 폴더가 열려요.")
         note("'알림창 내리기'는 기기에 따라 동작하지 않을 수 있어요. '화면 끄기'는 처음에 기기 관리자 권한을 한 번 허용해야 하고, 이렇게 끈 뒤에는 지문·얼굴 대신 PIN을 입력해야 할 수 있어요.")
 

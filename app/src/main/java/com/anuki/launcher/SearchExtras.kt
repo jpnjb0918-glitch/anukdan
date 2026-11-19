@@ -11,6 +11,15 @@ import java.math.RoundingMode
 
 /** Extra results in the drawer search: a calculator and the phone's contacts (opt-in). */
 object SearchExtras {
+    private val URL_RE = Regex("""^(https?://)?([A-Za-z0-9-]+\.)+[A-Za-z]{2,24}(:\d{1,5})?(/\S*)?$""")
+
+    /** An internet address typed or pasted into the search (naver.com, https://…/…): the address to open, else null. */
+    fun url(q: String): String? {
+        val t = q.trim()
+        if (t.isEmpty() || t.contains(' ') || !URL_RE.matches(t)) return null
+        return if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
+    }
+
 
     // ---------------------------------------------------------------- calculator
     /**

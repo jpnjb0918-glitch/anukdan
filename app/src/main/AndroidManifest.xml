@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 아늑단 날씨 '현재 위치' (고를 때만 물어봐요, 대략적인 위치만) -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 아늑단 집중 타이머: 시계 앱에 25분 타이머 맞추기 (끝날 때 시계 앱이 울려요) -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <application
         android:name=".LauncherApp"

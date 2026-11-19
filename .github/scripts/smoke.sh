@@ -1810,6 +1810,309 @@ adb shell input keyevent KEYCODE_BACK
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 
+step "Nova 런처를 참고한 기능 (홈 화면 정리, 디데이·집중 타이머·물 마시기 위젯, 페이지 넘김 효과, 자주 쓰는 앱 줄, 지운 뒤 되돌리기, 주소 열기, 두 손가락 쓸기, 홈 버튼)"
+# long-press empty spots of the current home page until the menu has $1, then tap it
+empty_menu() {
+  for P in "540 700" "540 1500" "200 1500" "880 1500" "540 400" "200 400" "880 400" "540 1100"; do
+    adb shell input swipe $P $P 1500
+    sleep 1
+    dump emenu
+    local E=$(ui shots/emenu.xml text "$1")
+    if [ -n "$E" ]; then adb shell input tap $E; sleep 2; return 0; fi
+    adb shell input keyevent KEYCODE_BACK
+    sleep 1
+  done
+  return 1
+}
+start_launcher() {
+  adb shell am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null
+  sleep 8
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+}
+# replace the launcher's layout.json with the file $1 (launcher stopped first; run-as, else root), then start it
+put_layout() {
+  adb shell am force-stop com.anuki.launcher
+  adb push "$1" /data/local/tmp/layout-in.json >/dev/null
+  adb shell run-as com.anuki.launcher sh -c "'cat /data/local/tmp/layout-in.json > files/layout.json'" 2>&1 | head -2 >> $LOG
+  local want=$(wc -c < "$1")
+  local got=$(adb shell run-as com.anuki.launcher cat files/layout.json | wc -c)
+  if [ "$got" != "$want" ]; then
+    echo "layout write with run-as: $got of $want bytes, trying root" >> $LOG
+    adb shell su 0 sh -c "'cat /data/local/tmp/layout-in.json > /data/data/com.anuki.launcher/files/layout.json'" 2>&1 | head -2 >> $LOG
+    got=$(adb shell run-as com.anuki.launcher cat files/layout.json | wc -c)
+  fi
+  echo "layout written: $got of $want bytes" >> $LOG
+  start_launcher
+}
+dialog_text() { ui "$1" idtext "android:id/message"; }
+
+# 1) 홈 화면 정리: a page of known apps, preview, 정리하기, then 정리 되돌리기 puts everything back
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell run-as com.anuki.launcher cat files/layout.json > shots/tidy0.json
+python3 .github/scripts/tidy_setup.py shots/tidy0.json shots/components.txt shots/tidy-setup.json >> $LOG 2>&1
+put_layout shots/tidy-setup.json
+adb shell run-as com.anuki.launcher cat files/layout.json > shots/tidy1.json
+python3 .github/scripts/layout_sig.py shots/tidy1.json > shots/tidy-before.sig
+echo "layout before tidy: $(wc -l < shots/tidy-before.sig) items, $(grep -c '"type":1' shots/tidy1.json) folders" >> $LOG
+adb logcat -c
+if empty_menu "홈 화면 정리"; then
+  dump td1
+  shot 130-tidy-preview
+  echo "tidy preview: $(dialog_text shots/td1.xml | head -c 600)" >> $LOG
+  OK=$(ui shots/td1.xml text "정리하기")
+  echo "tidy button=$OK" >> $LOG
+  if [ -n "$OK" ]; then
+    adb shell input tap $OK
+    sleep 3
+    adb shell run-as com.anuki.launcher cat files/layout.json > shots/tidy2.json
+    python3 -c "
+import json; d=json.load(open('shots/tidy2.json'))
+f=[i for i in d['items'] if i['type']==1]
+print('folders after tidy:', ', '.join(i['title']+'('+str(sum(1 for j in d['items'] if j['container']==i['id']))+')' for i in f))" >> $LOG
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    dump td2
+    shot 131-tidy-after
+    echo "home after tidy: $(ui shots/td2.xml list | awk '{print $1}' | tr '\n' ' ')" >> $LOG
+  fi
+else
+  echo "no 홈 화면 정리 in the home menu" >> $LOG
+fi
+adb logcat -d | grep -E "tidy (plan|applied)" | tail -2 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+adb logcat -c
+if empty_menu "정리 되돌리기"; then
+  sleep 2
+  adb shell run-as com.anuki.launcher cat files/layout.json > shots/tidy3.json
+  python3 .github/scripts/layout_sig.py shots/tidy3.json > shots/tidy-after-undo.sig
+  if diff -q shots/tidy-before.sig shots/tidy-after-undo.sig >/dev/null; then echo "tidy undo: layout same as before (ok)" >> $LOG
+  else echo "tidy undo: layout differs:" >> $LOG; diff shots/tidy-before.sig shots/tidy-after-undo.sig | head -10 >> $LOG; fi
+  shot 132-tidy-undone
+else
+  echo "no 정리 되돌리기 in the home menu" >> $LOG
+fi
+adb logcat -d | grep -E "tidy undone" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+# back to the layout the earlier checks left
+put_layout shots/tidy0.json
+
+# 2) the three new 아늑단 widgets
+adb logcat -c
+if add_cat_widget "아늑단 디데이"; then
+  D=$(widget_at "아늑단 디데이")
+  echo "dday widget=$D desc=$(grep -o 'content-desc="아늑단 디데이[^"]*"' shots/wh.xml)" >> $LOG
+  if [ -n "$D" ]; then
+    adb shell input tap $D
+    sleep 2
+    E=$(dump dd1; ui shots/dd1.xml classfirst android.widget.EditText)
+    [ -n "$E" ] && adb shell input tap $E
+    adb shell input text Trip
+    OK=$(dump dd2; ui shots/dd2.xml text "확인")
+    [ -n "$OK" ] && adb shell input tap $OK
+    sleep 2
+    dump dd3
+    shot 133-dday-date
+    OK=$(ui shots/dd3.xml text "확인"); [ -z "$OK" ] && OK=$(ui shots/dd3.xml text "OK")
+    echo "date dialog ok=$OK" >> $LOG
+    [ -n "$OK" ] && adb shell input tap $OK
+    sleep 2
+    dump dd4
+    shot 134-dday-widget
+    echo "dday after: $(grep -o 'content-desc="아늑단 디데이[^"]*"' shots/dd4.xml)" >> $LOG
+  fi
+fi
+if add_cat_widget "아늑단 물 마시기"; then
+  W=$(widget_at "아늑단 물 마시기")
+  echo "water widget=$W" >> $LOG
+  if [ -n "$W" ]; then
+    for i in 1 2 3; do adb shell input tap $W; sleep 1; done
+    sleep 1
+    dump wa1
+    shot 135-water-widget
+    echo "water after 3 taps: $(grep -o 'content-desc="아늑단 물 마시기[^"]*"' shots/wa1.xml)" >> $LOG
+  fi
+fi
+TIMER_PKG=$(adb shell cmd package resolve-activity --brief -a android.intent.action.SET_TIMER 2>/dev/null | tr -d '\r' | tail -1 | cut -d/ -f1)
+echo "clock app for timers: ${TIMER_PKG:-none}" >> $LOG
+if add_cat_widget "아늑단 집중 타이머"; then
+  F=$(widget_at "아늑단 집중 타이머")
+  echo "focus widget=$F desc=$(grep -o 'content-desc="아늑단 집중 타이머[^"]*"' shots/wh.xml)" >> $LOG
+  if [ -n "$F" ]; then
+    adb shell input tap $F
+    sleep 4
+    echo "after start: top=$(top_activity)" >> $LOG
+    adb shell input keyevent KEYCODE_HOME
+    sleep 2
+    F=$(find_widget "아늑단 집중 타이머")
+    dump fo1
+    shot 136-focus-running
+    echo "focus running: $(grep -o 'content-desc="아늑단 집중 타이머[^"]*"' shots/fo1.xml)" >> $LOG
+    if [ -n "$F" ]; then
+      long_menu $F
+      S=$(ui shots/lm.xml text "집중 그만하기")
+      echo "stop menu=$S" >> $LOG
+      [ -n "$S" ] && adb shell input tap $S
+      sleep 2
+      dump fo2
+      echo "focus after stop: $(grep -o 'content-desc="아늑단 집중 타이머[^"]*"' shots/fo2.xml)" >> $LOG
+    fi
+  fi
+  # the clock app's 25-minute timer must not ring in the middle of the later checks
+  [ -n "$TIMER_PKG" ] && adb shell am force-stop $TIMER_PKG
+fi
+adb logcat -d | grep -E "cat widget (dday|water|focus)|dday [0-9]|water [0-9]|focus (started|stopped)" | tail -8 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+
+# 3) 페이지 넘김 효과: cube, caught half-way through a slow swipe
+set_choice "페이지 넘김 효과" "큐브"
+adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "page_effect" >> $LOG
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell input swipe 1000 1300 450 1300 4000 &
+sleep 2.2
+shot 137-cube-half-way
+wait
+sleep 2
+shot 138-cube-after
+set_choice "페이지 넘김 효과" "카드 쌓기"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell input swipe 1000 1300 450 1300 4000 &
+sleep 2.2
+shot 139-stack-half-way
+wait
+sleep 1
+set_choice "페이지 넘김 효과" "기본 (밀기)"
+
+# 4) 자주 쓰는 앱 줄 at the top of the drawer
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb logcat -c
+open_drawer
+dump su1
+shot 140-drawer-suggest
+echo "suggest row title=$(ui shots/su1.xml text '자주 쓰는 앱')" >> $LOG
+adb logcat -d | grep -E "drawer suggest" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+
+# 5) 인터넷 주소 in the drawer search
+S=$(ui shots/su1.xml classfirst android.widget.EditText)
+[ -n "$S" ] && adb shell input tap $S
+sleep 1
+adb shell input text "example.com"
+sleep 2
+dump url1
+shot 141-search-url
+echo "url row: $(grep -o 'content-desc="주소 열기[^"]*"' shots/url1.xml)" >> $LOG
+U=$(ui shots/url1.xml descprefix "주소 열기")
+if [ -n "$U" ]; then
+  adb shell input tap $U
+  sleep 5
+  echo "after opening the address: top=$(top_activity)" >> $LOG
+fi
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+
+# 6) 지운 뒤 되돌리기: remove a home icon, then 되돌리기 brings it back
+dump un0
+UA=$(ui shots/un0.xml list | awk '$1!="폴더" && $1 !~ /^아늑단/ && $NF<2000 && $NF>300 {print; exit}')
+echo "icon to remove: $UA" >> $LOG
+if [ -n "$UA" ]; then
+  set -- $UA
+  UX=${@: -2:1}; UY=${@: -1}
+  ULABEL=$(echo "$UA" | awk '{$NF=""; $(NF-1)=""; print}' | sed 's/ *$//')
+  adb shell run-as com.anuki.launcher cat files/layout.json > shots/undo0.json
+  adb logcat -c
+  long_menu $UX $UY
+  R=$(ui shots/lm.xml text "홈에서 제거")
+  echo "remove menu=$R" >> $LOG
+  if [ -n "$R" ]; then
+    adb shell input tap $R
+    sleep 1
+    dump un1
+    shot 142-undo-bar
+    echo "after remove: '$ULABEL' on screen=$(ui shots/un1.xml find "$ULABEL" | wc -l), undo bar=$(ui shots/un1.xml anydesc 되돌리기)" >> $LOG
+    B=$(ui shots/un1.xml anydesc "되돌리기")
+    [ -n "$B" ] && adb shell input tap $B
+    sleep 2
+    dump un2
+    shot 143-undo-done
+    adb shell run-as com.anuki.launcher cat files/layout.json > shots/undo1.json
+    python3 .github/scripts/layout_sig.py shots/undo0.json > shots/undo0.sig
+    python3 .github/scripts/layout_sig.py shots/undo1.json > shots/undo1.sig
+    echo "after 되돌리기: '$ULABEL' on screen=$(ui shots/un2.xml find "$ULABEL" | wc -l), layout same as before=$(diff -q shots/undo0.sig shots/undo1.sig >/dev/null && echo yes || echo no)" >> $LOG
+  fi
+  adb logcat -d | grep -E "undo (offered|: layout)" | tail -2 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+fi
+
+# 7) 두 손가락 아래로 쓸기 (default: 빠른 설정 열기), with the touch device the pinch check found
+if [ -n "$TDEV" ]; then
+  python3 - "$TDEV" "$TMAXX" "$TMAXY" > shots/two.sh <<'PY'
+import sys
+dev, mx, my = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+def sx(x): return int(x * mx / 1080)
+def sy(y): return int(y * my / 2400)
+out = []
+def ev(t, c, v): out.append(f"sendevent {dev} {t} {c} {v}")
+for slot, tid, x in ((0, 901, 400), (1, 902, 680)):
+    ev(3, 47, slot); ev(3, 57, tid); ev(3, 58, 512); ev(3, 48, 8); ev(3, 53, sx(x)); ev(3, 54, sy(800))
+ev(0, 0, 0)
+for i in range(1, 11):
+    for slot, x in ((0, 400), (1, 680)):
+        ev(3, 47, slot); ev(3, 53, sx(x)); ev(3, 54, sy(800 + 70 * i))
+    ev(0, 0, 0)
+for slot in (0, 1):
+    ev(3, 47, slot); ev(3, 58, 0); ev(3, 57, 4294967295)
+ev(0, 0, 0)
+print("\n".join(out))
+PY
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb logcat -c
+  root_sh shots/two.sh
+  sleep 2
+  shot 144-two-finger-down
+  adb logcat -d | grep -E "pinch ratio|two-finger" | tail -3 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  echo "window after two-finger swipe: $(adb shell dumpsys window | grep -E 'mCurrentFocus' | head -1 | tr -s ' ')" >> $LOG
+  adb shell cmd statusbar collapse
+  sleep 1
+else
+  echo "two-finger swipe: skipped (no touch device)" >> $LOG
+fi
+
+# 8) 홈 버튼 on the first page -> 앱 서랍 열기, then back to 없음
+if open_settings_row "홈 버튼 (첫 페이지에서)"; then
+  dump hb1
+  A=$(ui shots/hb1.xml text "앱 서랍 열기")
+  [ -n "$A" ] && adb shell input tap $A
+  sleep 1
+  adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_button" >> $LOG
+  adb shell input keyevent KEYCODE_HOME
+  sleep 3
+  adb logcat -c
+  # the first press after settings only brings the launcher back; on another page it goes to the first page
+  for i in 1 2; do
+    adb shell input keyevent KEYCODE_HOME
+    sleep 3
+    dump hb2
+    [ "$(grep -c '앱 검색' shots/hb2.xml)" != "0" ] && break
+  done
+  shot 145-home-button-drawer
+  echo "home pressed on the first page (press $i): drawer open=$(grep -c '앱 검색' shots/hb2.xml)" >> $LOG
+  adb logcat -d | grep -E "home button" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+  if open_settings_row "홈 버튼 (첫 페이지에서)"; then
+    dump hb3
+    N=$(ui shots/hb3.xml text "없음")
+    [ -n "$N" ] && adb shell input tap $N
+    sleep 1
+  fi
+  adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_button" >> $LOG
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+fi
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

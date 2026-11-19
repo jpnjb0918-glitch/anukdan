@@ -63,7 +63,12 @@ class LayoutModel(private val ctx: Context) {
         try { fromJson(JSONObject(file.readText())) } catch (_: Exception) { }
     }
 
+    /** Bumped by every [save]: lets 되돌리기 see whether anything else changed since. */
+    var saves = 0
+        private set
+
     fun save() {
+        saves++
         try {
             val tmp = File(ctx.filesDir, "layout.json.tmp")
             tmp.writeText(toJson().toString())

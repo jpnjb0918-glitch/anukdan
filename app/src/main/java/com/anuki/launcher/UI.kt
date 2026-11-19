@@ -325,6 +325,10 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     private val tabsScroll = HorizontalScrollView(act)
     /** Extra search results above the apps: calculator, contacts, hidden apps unlock, web search. */
     private val extras = LinearLayout(act)
+    /** 자주 쓰는 앱: one row of the most opened apps above the list (Nova's predictive apps), not while searching. */
+    private val suggest = LinearLayout(act)
+    private val suggestTitle = TextView(act)
+    private val suggestGrid = IconGrid(act)
     private val body = FrameLayout(act)
     private val scroll = ScrollView(act)
     private val stack = LinearLayout(act)
@@ -373,6 +377,17 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         column.addView(extras, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             setMargins(act.dp(12f), act.dp(4f), act.dp(12f), 0)
         })
+        suggest.orientation = LinearLayout.VERTICAL
+        suggest.visibility = GONE
+        suggestTitle.apply {
+            text = "자주 쓰는 앱"
+            textSize = 13f
+            setPadding(act.dp(12f), act.dp(4f), act.dp(12f), 0)
+        }
+        suggest.addView(suggestTitle, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        suggest.addView(suggestGrid, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        suggest.setPadding(act.dp(8f), 0, act.dp(8f), act.dp(4f))
+        column.addView(suggest, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         scroll.isVerticalScrollBarEnabled = false
         scroll.clipToPadding = false
@@ -500,6 +515,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         var style = act.prefs.drawerStyle
         if (searching && (style == "sections" || style == "categories")) style = "grid"
         fillExtras(if (searching) search.text.toString().trim() else "")
+        fillSuggest(searching)
         val paged = style == "pages"
         scroll.visibility = if (paged) GONE else VISIBLE
         pager.visibility = if (paged) VISIBLE else GONE
@@ -561,10 +577,37 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
         if (showIndex) indexBar.keys = keys
     }
 
+    private fun fillSuggest(searching: Boolean) {
+        val cols = act.prefs.drawerCols
+        val hidden = act.prefs.hidden
+        val top = if (!act.prefs.drawerSuggest || searching || tabIndex != 0) emptyList() else
+            act.apps.all.filter { it.key !in hidden && act.prefs.launchCount(it.key) > 0 }
+                .sortedByDescending { act.prefs.launchCount(it.key) }.take(cols)
+        if (top.isEmpty()) { suggest.visibility = GONE; return }
+        suggest.visibility = VISIBLE
+        suggestTitle.typeface = Fonts.regular(bold = true)
+        suggestTitle.setTextColor(if (onPanel) Palette.TEAL else Color.WHITE)
+        suggestGrid.cols = cols
+        suggestGrid.rowHeight = rowHeight()
+        while (suggestGrid.childCount > top.size) suggestGrid.removeViewAt(suggestGrid.childCount - 1)
+        for ((i, app) in top.withIndex()) {
+            if (i < suggestGrid.childCount) bind(suggestGrid.getChildAt(i) as IconView, app, false)
+            else suggestGrid.addView(newIcon(app, false))
+        }
+        suggestGrid.requestLayout()
+        if (LauncherApp.debug) LauncherApp.dlog("drawer suggest: ${top.joinToString { it.label }}")
+    }
+
     // ---------------------------------------------------------------- extra search results
     private fun fillExtras(q: String) {
         extras.removeAllViews()
         if (q.isEmpty()) { extras.visibility = GONE; return }
+        SearchExtras.url(q)?.let { u ->
+            extraRow("🌐", u.substringAfter("://").trimEnd('/'), "인터넷 주소 열기", "주소 열기: $u") {
+                LauncherApp.dlog("search url -> $u")
+                if (!act.openUrl(u)) act.toast("주소를 열 앱이 없어요")
+            }
+        }
         SearchExtras.calculate(q)?.let { r ->
             extraRow("＝", "$r", "계산 결과 · 눌러서 복사", "계산: $r") {
                 act.copyText("계산", r.replace(",", ""))

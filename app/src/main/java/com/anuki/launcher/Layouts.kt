@@ -128,6 +128,26 @@ open class HorizontalPager(ctx: Context) : ViewGroup(ctx) {
 
     val pageCount: Int get() = childCount
 
+    /** 페이지 넘김 효과 while the pages move ("" = plain slide); see [PageEffects]. */
+    var effect = ""
+        set(v) { if (field != v) { field = v; applyEffect() } }
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        applyEffect()
+    }
+
+    /** True while some page may still carry an effect's transform (so turning the effect off resets them once). */
+    private var effectShown = false
+
+    /** Each page's transform for where it is now: 0 = on screen, -1 one page to the left, 1 one to the right. */
+    private fun applyEffect() {
+        val w = width
+        if (w <= 0 || (effect.isEmpty() && !effectShown)) return
+        for (i in 0 until childCount) PageEffects.apply(effect, getChildAt(i), (i * w - scrollX).toFloat() / w)
+        effectShown = effect.isNotEmpty()
+    }
+
     /** The page changed (by a swipe or [snapToPage]). */
     protected open fun onPageSelected(page: Int) {}
 
@@ -150,6 +170,7 @@ open class HorizontalPager(ctx: Context) : ViewGroup(ctx) {
         val w = r - l
         for (i in 0 until childCount) getChildAt(i).layout(i * w, 0, (i + 1) * w, b - t)
         if (scroller.isFinished && !dragging) scrollTo(currentPage * w, 0)
+        applyEffect()
     }
 
     override fun computeScroll() {
@@ -262,6 +283,8 @@ class PagedView(ctx: Context) : HorizontalPager(ctx) {
         fun onIconSwipeUp(child: View?): Boolean = false
         fun onPinchIn() {}
         fun onPinchOut() {}
+        /** Two fingers moved up ([up]) or down together without pinching. */
+        fun onTwoFingerSwipe(up: Boolean) {}
     }
 
     var listener: Listener? = null
@@ -270,6 +293,8 @@ class PagedView(ctx: Context) : HorizontalPager(ctx) {
     private var downChild: View? = null
     private var pinchStart = 0f
     private var pinchNow = 0f
+    private var pinchStartY = 0f
+    private var pinchNowY = 0f
 
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
@@ -294,16 +319,30 @@ class PagedView(ctx: Context) : HorizontalPager(ctx) {
     private fun span(ev: MotionEvent): Float =
         if (ev.pointerCount < 2) 0f else kotlin.math.hypot(ev.getX(0) - ev.getX(1), ev.getY(0) - ev.getY(1))
 
+    /** Where the two fingers are, on average (up and down). */
+    private fun midY(ev: MotionEvent): Float = if (ev.pointerCount < 2) ev.y else (ev.getY(0) + ev.getY(1)) / 2f
+
     private fun startPinch(ev: MotionEvent) {
         mode = 3
         pinchStart = span(ev)
         pinchNow = pinchStart
+        pinchStartY = midY(ev)
+        pinchNowY = pinchStartY
     }
 
+    /** The fingers came apart or together: a pinch; kept their distance but moved together: a two-finger swipe. */
     private fun endPinch() {
         val r = if (pinchStart > 0f) pinchNow / pinchStart else 1f
-        if (LauncherApp.debug) LauncherApp.dlog("pinch ratio ${"%.2f".format(r)}")
-        if (r < 0.75f) listener?.onPinchIn() else if (r > 1.33f) listener?.onPinchOut()
+        val dy = pinchNowY - pinchStartY
+        if (LauncherApp.debug) LauncherApp.dlog("pinch ratio ${"%.2f".format(r)} dy ${dy.toInt()}")
+        when {
+            r < 0.75f -> listener?.onPinchIn()
+            r > 1.33f -> listener?.onPinchOut()
+            r in 0.8f..1.25f && abs(dy) > dpx(72f) -> {
+                if (LauncherApp.debug) LauncherApp.dlog("two-finger swipe ${if (dy < 0) "up" else "down"}")
+                listener?.onTwoFingerSwipe(up = dy < 0)
+            }
+        }
         pinchStart = 0f
     }
 
@@ -343,7 +382,7 @@ class PagedView(ctx: Context) : HorizontalPager(ctx) {
             MotionEvent.ACTION_POINTER_DOWN -> if (mode == 0 || mode == 2) startPinch(ev)
             MotionEvent.ACTION_POINTER_UP -> if (mode == 3) { endPinch(); mode = 4 }
             MotionEvent.ACTION_MOVE -> {
-                if (mode == 3) { if (ev.pointerCount >= 2) pinchNow = span(ev); return true }
+                if (mode == 3) { if (ev.pointerCount >= 2) { pinchNow = span(ev); pinchNowY = midY(ev) }; return true }
                 if (mode == 4) return true
                 if (mode == 0) decide(ev)
                 if (mode == 1) dragTo(ev)
@@ -447,5 +486,53 @@ class IconGrid(ctx: Context) : ViewGroup(ctx) {
             val y = paddingTop + (i / cols) * rowHeight
             getChildAt(i).layout(x, y, x + cw, y + rowHeight)
         }
+    }
+}
+
+/**
+ * 페이지 넘김 효과 (Nova Launcher's "scroll effect" idea): how a page looks while it moves. [apply] gets the page's
+ * position, 0 on screen, -1 a whole page to the left, 1 a whole page to the right; at rest every page is plain again.
+ */
+object PageEffects {
+    val ALL = listOf(
+        "" to "기본 (밀기)",
+        "cube" to "큐브",
+        "stack" to "카드 쌓기",
+        "zoom" to "작아졌다 커지기",
+        "accordion" to "아코디언",
+        "tilt" to "기울이기",
+    )
+
+    fun label(key: String) = ALL.firstOrNull { it.first == key }?.second ?: ALL[0].second
+
+    fun apply(effect: String, v: View, pos: Float) {
+        val w = v.width.toFloat()
+        val h = v.height.toFloat()
+        var px = w / 2f; var py = h / 2f
+        var rotY = 0f; var rot = 0f; var sx = 1f; var sy = 1f; var tx = 0f; var a = 1f
+        if (effect.isNotEmpty() && abs(pos) < 1f) when (effect) {
+            // turning around the edge it shares with the next page
+            "cube" -> { px = if (pos < 0f) w else 0f; rotY = 90f * pos }
+            // the incoming page waits underneath, growing and appearing, while the current one slides off it
+            "stack" -> if (pos > 0f) {
+                a = 1f - pos; tx = -w * pos
+                sx = 0.75f + 0.25f * (1f - pos); sy = sx
+            }
+            "zoom" -> {
+                sx = maxOf(0.85f, 1f - abs(pos)); sy = sx
+                val vm = h * (1f - sx) / 2f
+                val hm = w * (1f - sx) / 2f
+                tx = if (pos < 0f) hm - vm / 2f else -hm + vm / 2f
+                a = 0.5f + (sx - 0.85f) / 0.15f * 0.5f
+            }
+            "accordion" -> { px = if (pos < 0f) 0f else w; sx = if (pos < 0f) 1f + pos else 1f - pos }
+            "tilt" -> { py = h; rot = -15f * pos }
+        }
+        if (rotY != 0f) v.cameraDistance = 12000f * v.resources.displayMetrics.density
+        v.pivotX = px; v.pivotY = py
+        v.rotationY = rotY; v.rotation = rot
+        v.scaleX = sx; v.scaleY = sy
+        v.translationX = tx
+        v.alpha = a
     }
 }

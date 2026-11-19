@@ -45,7 +45,23 @@ object CatWidgets {
     const val MEMO = "memo"
     const val WEB = "web"
     const val WEATHER = "weather"
+    const val DDAY = "dday"
+    const val FOCUS = "focus"
+    const val WATER = "water"
     const val ANALOG = "analog"
+
+    /** Focus session length: 25 minutes (a pomodoro). */
+    const val FOCUS_MS = 25 * 60 * 1000L
+
+    fun today(): String = java.time.LocalDate.now().toString()
+
+    /** "date|count" stored in a widget: today's count, 0 when the date is another day. */
+    fun countToday(v: String): Int {
+        val d = v.substringBefore('|', "")
+        return if (d == today()) v.substringAfter('|', "0").toIntOrNull() ?: 0 else 0
+    }
+
+    fun withCount(n: Int): String = today() + "|" + maxOf(0, n)
 
     class Kind(val key: String, val label: String, val desc: String, val spanX: Int, val spanY: Int)
 
@@ -56,6 +72,9 @@ object CatWidgets {
         Kind(WEB, "아늑단 인터넷 검색", "누르면 인터넷 검색, 마이크는 말로 검색 · 길게 눌러 검색 엔진 고르기", 4, 1),
         Kind(MEMO, "아늑단 메모", "눌러서 메모를 써요", 2, 2),
         Kind(WEATHER, "아늑단 날씨", "지금 날씨와 오늘 최고·최저 기온 · 도시를 고르거나 현재 위치 · " + Weather.SOURCE, 4, 2),
+        Kind(DDAY, "아늑단 디데이", "기다리는 날까지 남은 날 · 눌러서 이름과 날짜 정하기", 2, 2),
+        Kind(FOCUS, "아늑단 집중 타이머", "눌러서 25분 집중 · 끝나면 시계 앱 타이머가 울리고, 오늘 몇 번 했는지 세요", 2, 2),
+        Kind(WATER, "아늑단 물 마시기", "한 잔 마실 때마다 눌러요 · 목표 잔 수만큼 차오르고 매일 새로 세요", 2, 2),
     )
 
     fun kind(key: String) = KINDS.firstOrNull { it.key == key }
@@ -66,6 +85,9 @@ object CatWidgets {
         WEB -> WebSearchWidget(ctx, item)
         MEMO -> MemoWidget(ctx, item)
         WEATHER -> WeatherWidget(ctx, item)
+        DDAY -> DdayWidget(ctx, item)
+        FOCUS -> FocusWidget(ctx, item)
+        WATER -> WaterWidget(ctx, item)
         else -> ClockWidget(ctx, item)
     }
 
@@ -74,7 +96,13 @@ object CatWidgets {
         val k = kind(key)
         val item = HomeItem(
             -1, HomeItem.TYPE_CAT_WIDGET, HomeItem.DESKTOP, spanX = k?.spanX ?: 1, spanY = k?.spanY ?: 1, key = key,
-            title = if (key == MEMO) "우유 사기\n6시 요가" else "",
+            title = when (key) {
+                MEMO -> "우유 사기\n6시 요가"
+                DDAY -> "여행"
+                WATER -> withCount(3)
+                else -> ""
+            },
+            provider = if (key == DDAY) java.time.LocalDate.now().plusDays(30).toString() else "",
         )
         val v = create(ctx, item)
         v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
@@ -238,6 +266,53 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
 
     /** Drawn inside the tile (clipped), under the outline. */
     protected open fun drawInside(c: Canvas) {}
+
+    private val wave = Path()
+    private val levelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** The tile filled from the bottom to [fraction] (0–1) with a wavy top, in [colors] (light to dark); for drawInside. */
+    protected fun drawLevel(c: Canvas, fraction: Float, colors: IntArray) {
+        val f = fraction.coerceIn(0f, 1f)
+        if (f <= 0f) return
+        val top = panel.bottom - panel.height() * f
+        val amp = max(dp(2f), 9f * u)
+        val n = 4
+        val step = panel.width() / n
+        wave.reset()
+        wave.moveTo(panel.left, top)
+        for (i in 0 until n) {
+            val x0 = panel.left + i * step
+            wave.quadTo(x0 + step / 2, top + if (i % 2 == 0) amp else -amp, x0 + step, top)
+        }
+        wave.lineTo(panel.right, panel.bottom)
+        wave.lineTo(panel.left, panel.bottom)
+        wave.close()
+        levelPaint.shader = LinearGradient(panel.left, top, panel.right, panel.bottom, colors, floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        c.drawPath(wave, levelPaint)
+        levelPaint.shader = null
+    }
+
+    /** The icons' cyan family (light, mid, dark) in the chosen 아이콘 색. */
+    protected fun cyanLevels() = intArrayOf(cyan(0xFF7FE6E4.toInt()), cyan(0xFF4BD5D6.toInt()), cyan(0xFF2E9497.toInt()))
+
+    /** A big outlined line ([big], fitted to [area]) with a small line under it, centred in [area]. */
+    protected fun twoLines(c: Canvas, area: RectF, big: String, small: String, smallPaint: TextPaint, maxBig: Float = 0.42f) {
+        textFill.typeface = Fonts.regular(true)
+        var size = min(area.height() * maxBig, area.width() * 0.5f)
+        textFill.textSize = size
+        val w = textFill.measureText(big)
+        if (w > area.width() * 0.92f) size *= area.width() * 0.92f / w
+        smallPaint.typeface = Fonts.regular(true)
+        smallPaint.textSize = max(sp(11f), size * 0.3f).coerceAtMost(area.height() * 0.17f)
+        var sizeSmall = smallPaint.textSize
+        val sw = smallPaint.measureText(small)
+        if (sw > area.width()) { sizeSmall *= area.width() / sw; smallPaint.textSize = sizeSmall }
+        val gap = dp(4f)
+        val blockH = size * 0.75f + gap + sizeSmall
+        val baseline = area.centerY() - blockH / 2 + size * 0.75f
+        outlined(c, big, area.centerX(), baseline, size)
+        c.drawText(small, area.centerX(), baseline + gap + sizeSmall, smallPaint)
+    }
 
     /** Drawn over the tile, under the paws. */
     protected abstract fun drawContent(c: Canvas)
@@ -485,8 +560,6 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
     private var charging = false
     private var full = false
     private val area = RectF()
-    private val wave = Path()
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND }
     private val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXT; textAlign = Paint.Align.CENTER }
 
     init {
@@ -516,25 +589,7 @@ class BatteryWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
 
     override fun drawInside(c: Canvas) {
         if (level < 0) return
-        val top = panel.bottom - panel.height() * level / 100f
-        val amp = max(dp(2f), 9f * u)
-        val n = 4
-        val step = panel.width() / n
-        wave.reset()
-        wave.moveTo(panel.left, top)
-        for (i in 0 until n) {
-            val x0 = panel.left + i * step
-            wave.quadTo(x0 + step / 2, top + if (i % 2 == 0) amp else -amp, x0 + step, top)
-        }
-        wave.lineTo(panel.right, panel.bottom)
-        wave.lineTo(panel.left, panel.bottom)
-        wave.close()
-        val colors = if (low) intArrayOf(0xFFF7B0B0.toInt(), 0xFFEF8A8A.toInt(), 0xFFDC6262.toInt())
-        else intArrayOf(cyan(0xFF7FE6E4.toInt()), cyan(0xFF4BD5D6.toInt()), cyan(0xFF2E9497.toInt()))
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(panel.left, top, panel.right, panel.bottom, colors, floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-        c.drawPath(wave, p)
-        p.shader = null
+        drawLevel(c, level / 100f, if (low) intArrayOf(0xFFF7B0B0.toInt(), 0xFFEF8A8A.toInt(), 0xFFDC6262.toInt()) else cyanLevels())
     }
 
     override fun drawContent(c: Canvas) {
@@ -713,5 +768,128 @@ class MemoWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         c.translate(area.left, area.top)
         layout.draw(c)
         c.restore()
+    }
+}
+
+/**
+ * 디데이: days left until a day the user picks (Nova 9's "countdown" widget idea).
+ * item.provider = the day ("2026-12-25"), item.title = what it is.
+ */
+class DdayWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
+    override val paperTile = true
+    private val area = RectF()
+    private val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXT; textAlign = Paint.Align.CENTER }
+
+    override fun filter() = IntentFilter().apply {
+        addAction(Intent.ACTION_DATE_CHANGED); addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED)
+    }
+
+    /** "D-12", "D-DAY", "D+3"; null when no day is set. */
+    fun label(): String? {
+        val day = try { java.time.LocalDate.parse(item.provider) } catch (_: Exception) { return null }
+        val n = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), day)
+        return when {
+            n > 0 -> "D-$n"
+            n == 0L -> "D-DAY"
+            else -> "D+${-n}"
+        }
+    }
+
+    override fun expr() = if (label() == "D-DAY") "open" else "happy"
+
+    override fun drawContent(c: Canvas) {
+        contentArea(area)
+        if (area.width() <= 0f || area.height() <= 0f) return
+        val d = label()
+        contentDescription = "아늑단 디데이: " + if (d == null) "날짜 없음" else "${item.title.ifEmpty { "디데이" }} $d"
+        small.color = if (d == null) MUTED else TEXT
+        twoLines(c, area, d ?: "D-?", if (d == null) "눌러서 날짜 정하기" else item.title.ifEmpty { item.provider }, small)
+    }
+}
+
+/**
+ * 집중 타이머: 25 minutes of focus (Nova 9's "focus timer" widget idea); the tile fills up as the time passes and
+ * today's finished sessions are counted. The phone's clock app gets a timer too, so the end rings even when the
+ * launcher is in the background. item.provider = end time in ms ("" = not running), item.title = "date|count".
+ */
+class FocusWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
+    override val paperTile = true
+    private val area = RectF()
+    private val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXT; textAlign = Paint.Align.CENTER }
+    private val tick = Runnable { invalidate() }
+
+    val endAt: Long get() = item.provider.toLongOrNull() ?: 0L
+    val running: Boolean get() = endAt > System.currentTimeMillis()
+
+    override fun expr() = if (running) "open" else "happy"
+
+    override fun drawInside(c: Canvas) {
+        val end = endAt
+        if (end <= 0L) return
+        val left = (end - System.currentTimeMillis()).coerceAtLeast(0L)
+        drawLevel(c, 1f - left.toFloat() / CatWidgets.FOCUS_MS, cyanLevels())
+    }
+
+    override fun drawContent(c: Canvas) {
+        val now = System.currentTimeMillis()
+        val end = endAt
+        if (end in 1..now) {
+            // the session ended while nobody was looking: count it
+            item.title = CatWidgets.withCount(CatWidgets.countToday(item.title) + 1)
+            item.provider = ""
+            LauncherApp.instance.model.save()
+            LauncherApp.dlog("focus finished: ${CatWidgets.countToday(item.title)} today")
+        }
+        contentArea(area)
+        if (area.width() <= 0f || area.height() <= 0f) return
+        val count = CatWidgets.countToday(item.title)
+        val big: String
+        val line: String
+        if (running) {
+            val left = ((endAt - now + 999) / 1000).toInt()
+            big = "%d:%02d".format(left / 60, left % 60)
+            line = "집중 중 · 오늘 ${count}번"
+            removeCallbacks(tick)
+            postDelayed(tick, 1000L - now % 1000L)
+        } else {
+            big = "25:00"
+            line = "눌러서 시작 · 오늘 ${count}번"
+        }
+        contentDescription = "아늑단 집중 타이머: " + (if (running) "$big 남음" else "멈춤") + ", 오늘 ${count}번"
+        twoLines(c, area, big, line, small)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(tick)
+        super.onDetachedFromWindow()
+    }
+}
+
+/**
+ * 물 마시기: a tap per glass (Nova 9's "water tracker" widget idea); the tile fills towards the day's goal and starts
+ * over each day. item.title = "date|glasses", item.provider = goal ("" = 8).
+ */
+class WaterWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
+    override val paperTile = true
+    private val area = RectF()
+    private val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXT; textAlign = Paint.Align.CENTER }
+
+    val goal: Int get() = item.provider.toIntOrNull()?.coerceIn(1, 30) ?: 8
+    val glasses: Int get() = CatWidgets.countToday(item.title)
+
+    override fun filter() = IntentFilter(Intent.ACTION_DATE_CHANGED)
+    override fun expr() = if (glasses >= goal) "open" else "happy"
+
+    override fun drawInside(c: Canvas) {
+        // water blue, in the 아이콘 색 family like the rest of the tile
+        drawLevel(c, glasses.toFloat() / goal, intArrayOf(cyan(0xFFA8E6F5.toInt()), cyan(0xFF62C3E8.toInt()), cyan(0xFF2F8FC0.toInt())))
+    }
+
+    override fun drawContent(c: Canvas) {
+        contentArea(area)
+        if (area.width() <= 0f || area.height() <= 0f) return
+        val n = glasses
+        contentDescription = "아늑단 물 마시기: 오늘 ${n}잔, 목표 ${goal}잔"
+        twoLines(c, area, "$n/$goal", if (n >= goal) "목표 달성!" else "눌러서 한 잔", small)
     }
 }
