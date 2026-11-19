@@ -2024,7 +2024,9 @@ if [ -n "$UA" ]; then
   adb shell run-as com.anuki.launcher cat files/layout.json > shots/undo0.json
   adb logcat -c
   long_menu $UX $UY
+  # an app icon or a system widget (its id must survive until 되돌리기 is gone)
   R=$(ui shots/lm.xml text "홈에서 제거")
+  [ -z "$R" ] && R=$(ui shots/lm.xml text "위젯 삭제")
   echo "remove menu=$R" >> $LOG
   if [ -n "$R" ]; then
     adb shell input tap $R

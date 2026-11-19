@@ -11,7 +11,8 @@ import org.json.JSONObject
  * 정리하기; afterwards it can be undone for [UNDO_DAYS] days.
  *
  * Kinds with two or more apps get a folder (or join a folder of that name that is already there); apps of the kind
- * 기타 stay where they are. On the pages that lost apps the remaining one-cell icons move up into the gaps
+ * 기타 stay where they are. An app that is on the home screen twice goes into its folder once (the extra copy comes
+ * back with 되돌리기). On the pages that lost apps the remaining one-cell icons move up into the gaps
  * (widgets stay put).
  */
 object Tidy {
@@ -25,10 +26,12 @@ object Tidy {
 
     fun folderName(kind: String) = SHORT[kind] ?: kind
 
-    class Group(val name: String, val apps: List<HomeItem>, val into: HomeItem?)
+    /** [apps] go into the folder; [copies] are the same apps a second time, taken off the home screen. */
+    class Group(val name: String, val apps: List<HomeItem>, val into: HomeItem?, val copies: List<HomeItem>)
 
     class Plan(val groups: List<Group>, val kept: Int) {
         val moved get() = groups.sumOf { it.apps.size }
+        val copies get() = groups.sumOf { it.copies.size }
     }
 
     fun plan(model: LayoutModel, apps: AppRepository): Plan {
@@ -46,7 +49,11 @@ object Tidy {
             val list = byKind[kind] ?: continue
             val name = folderName(kind)
             val existing = folders.firstOrNull { it.title == name }
-            if (list.size >= 2 || existing != null) groups += Group(name, list, existing) else kept += list.size
+            val inside = existing?.let { f -> model.folderContents(f.id).map { it.key }.toSet() } ?: emptySet()
+            val seen = HashSet<String>(inside)
+            val (once, again) = list.partition { seen.add(it.key) }
+            if (once.size >= 2 || (existing != null && list.isNotEmpty())) groups += Group(name, once, existing, again)
+            else kept += list.size
         }
         return Plan(groups, kept)
     }
@@ -55,7 +62,7 @@ object Tidy {
     fun ask(a: Activity, onChanged: () -> Unit) {
         val app = LauncherApp.instance
         val p = plan(app.model, app.apps)
-        LauncherApp.dlog("tidy plan: ${p.groups.size} folders, ${p.moved} apps move, ${p.kept} stay")
+        LauncherApp.dlog("tidy plan: ${p.groups.size} folders, ${p.moved} apps move, ${p.copies} second copies, ${p.kept} stay")
         if (p.groups.isEmpty()) {
             AlertDialog.Builder(a).setTitle("홈 화면 정리")
                 .setMessage("이미 깔끔해요.\n홈 화면에 같은 종류의 앱이 두 개 이상 모여 있지 않아요.")
@@ -69,6 +76,7 @@ object Tidy {
                 .append(if (g.into != null) " (있는 폴더에 넣기)" else " (새 폴더)")
                 .append(" · ").append(g.apps.size).append("개\n    ").append(names)
         }
+        if (p.copies > 0) text.append("\n\n홈 화면에 두 번 있는 앱 ").append(p.copies).append("개는 폴더에 하나만 넣어요")
         text.append("\n\n그대로 두는 앱 ").append(p.kept).append("개 · 빈칸은 앞으로 당겨요 · ")
             .append(UNDO_DAYS).append("일 동안 되돌릴 수 있어요")
         AlertDialog.Builder(a).setTitle("홈 화면 정리")
@@ -93,7 +101,15 @@ object Tidy {
         }
         val made = JSONArray()
         val pages = HashSet<Int>()
+        // second copies of an app leave the home screen; kept whole so 되돌리기 can put them back
+        val removed = JSONArray()
+        for (g in plan.groups) for (c in g.copies) {
+            removed.put(c.toJson())
+            pages += c.screen
+            model.items.remove(c)
+        }
         for (g in plan.groups) {
+            if (g.apps.isEmpty()) continue
             val folder = g.into ?: g.apps.first().let { f ->
                 HomeItem(model.newId(), HomeItem.TYPE_FOLDER, HomeItem.DESKTOP, f.screen, f.x, f.y, title = g.name)
                     .also { model.items += it; made.put(JSONObject().put("id", it.id).put("title", it.title)) }
@@ -107,7 +123,8 @@ object Tidy {
             }
         }
         for (p in pages) compact(model, p, prefs.homeCols, prefs.homeRows)
-        prefs.tidyUndo = JSONObject().put("time", System.currentTimeMillis()).put("pos", pos).put("made", made).toString()
+        prefs.tidyUndo = JSONObject().put("time", System.currentTimeMillis()).put("pos", pos).put("made", made)
+            .put("removed", removed).toString()
         model.save()
         LauncherApp.dlog("tidy applied: ${plan.groups.joinToString { "${it.name}=${it.apps.size}" }}, pages $pages")
     }
@@ -161,6 +178,16 @@ object Tidy {
             item.screen = at.getInt(0); item.x = at.getInt(1); item.y = at.getInt(2)
             restored += item
             model.pageCount = maxOf(model.pageCount, item.screen + 1)
+        }
+        // second copies taken off the home screen come back (with a new id if theirs has been handed out again)
+        val removedArr = o.optJSONArray("removed") ?: JSONArray()
+        for (i in 0 until removedArr.length()) {
+            val back = try { HomeItem.fromJson(removedArr.getJSONObject(i)) } catch (_: Exception) { continue }
+            if (model.byId(back.id) != null) back.id = model.newId()
+            back.container = HomeItem.DESKTOP
+            model.items += back
+            restored += back
+            model.pageCount = maxOf(model.pageCount, back.screen + 1)
         }
         // folders the tidy-up made go away; an app put into one since then goes back to the home screen
         val homeless = ArrayList<HomeItem>()
