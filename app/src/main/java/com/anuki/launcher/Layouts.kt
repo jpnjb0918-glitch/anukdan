@@ -130,7 +130,17 @@ open class HorizontalPager(ctx: Context) : ViewGroup(ctx) {
 
     /** 페이지 넘김 효과 while the pages move ("" = plain slide); see [PageEffects]. */
     var effect = ""
-        set(v) { if (field != v) { field = v; applyEffect() } }
+        set(v) {
+            if (field == v) return
+            field = v
+            // 카드 쌓기: the incoming page waits under the current one, so the pages draw last-to-first
+            isChildrenDrawingOrderEnabled = v == "stack"
+            applyEffect()
+            invalidate()
+        }
+
+    override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int): Int =
+        if (effect == "stack") childCount - 1 - drawingPosition else drawingPosition
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
@@ -510,7 +520,7 @@ object PageEffects {
         val h = v.height.toFloat()
         var px = w / 2f; var py = h / 2f
         var rotY = 0f; var rot = 0f; var sx = 1f; var sy = 1f; var tx = 0f; var a = 1f
-        if (effect.isNotEmpty() && abs(pos) < 1f) when (effect) {
+        if (effect.isNotEmpty() && pos != 0f && abs(pos) < 1f) when (effect) {
             // turning around the edge it shares with the next page
             "cube" -> { px = if (pos < 0f) w else 0f; rotY = 90f * pos }
             // the incoming page waits underneath, growing and appearing, while the current one slides off it
@@ -523,9 +533,10 @@ object PageEffects {
                 val vm = h * (1f - sx) / 2f
                 val hm = w * (1f - sx) / 2f
                 tx = if (pos < 0f) hm - vm / 2f else -hm + vm / 2f
-                a = 0.5f + (sx - 0.85f) / 0.15f * 0.5f
+                a = minOf(1f, 0.5f + (sx - 0.85f) / 0.15f * 0.5f)
             }
-            "accordion" -> { px = if (pos < 0f) 0f else w; sx = if (pos < 0f) 1f + pos else 1f - pos }
+            // both pages held on the screen, one folding away to its edge while the other unfolds
+            "accordion" -> { tx = -w * pos; px = if (pos < 0f) 0f else w; sx = if (pos < 0f) 1f + pos else 1f - pos }
             "tilt" -> { py = h; rot = -15f * pos }
         }
         if (rotY != 0f) v.cameraDistance = 12000f * v.resources.displayMetrics.density

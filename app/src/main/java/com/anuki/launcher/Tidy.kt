@@ -85,15 +85,18 @@ object Tidy {
     fun apply(model: LayoutModel, prefs: Prefs, plan: Plan) {
         // where everything on the home screen was, for 되돌리기
         val pos = JSONObject()
+        // with each item's type and key: ids are handed out again after a reload, so 되돌리기 checks it is the same item
         for (it in model.items) {
-            if (it.container == HomeItem.DESKTOP) pos.put(it.id.toString(), JSONArray().put(it.screen).put(it.x).put(it.y))
+            if (it.container == HomeItem.DESKTOP) {
+                pos.put(it.id.toString(), JSONArray().put(it.screen).put(it.x).put(it.y).put(it.type).put(it.key))
+            }
         }
         val made = JSONArray()
         val pages = HashSet<Int>()
         for (g in plan.groups) {
             val folder = g.into ?: g.apps.first().let { f ->
                 HomeItem(model.newId(), HomeItem.TYPE_FOLDER, HomeItem.DESKTOP, f.screen, f.x, f.y, title = g.name)
-                    .also { model.items += it; made.put(it.id) }
+                    .also { model.items += it; made.put(JSONObject().put("id", it.id).put("title", it.title)) }
             }
             var n = model.folderContents(folder.id).size
             for (item in g.apps) {
@@ -141,12 +144,18 @@ object Tidy {
         val o = try { JSONObject(prefs.tidyUndo) } catch (_: Exception) { return false }
         val pos = o.optJSONObject("pos") ?: return false
         val madeArr = o.optJSONArray("made") ?: JSONArray()
-        val made = (0 until madeArr.length()).map { madeArr.getLong(it) }.toSet()
+        // the folders this tidy-up made, as (id, name): only a folder with both still matching is taken away
+        val madeNamed = (0 until madeArr.length()).mapNotNull { madeArr.optJSONObject(it) }
+            .associate { it.optLong("id") to it.optString("title") }
+        val made = madeNamed.filter { (id, title) ->
+            model.byId(id)?.let { it.type == HomeItem.TYPE_FOLDER && it.title == title } == true
+        }.keys
         val restored = ArrayList<HomeItem>()
         val emptied = HashSet<Long>()
         for (k in pos.keys()) {
             val item = model.byId(k.toLongOrNull() ?: continue) ?: continue
             val at = pos.getJSONArray(k)
+            if (item.type != at.optInt(3, item.type) || item.key != at.optString(4, item.key)) continue
             if (item.container >= 0) emptied += item.container
             item.container = HomeItem.DESKTOP
             item.screen = at.getInt(0); item.x = at.getInt(1); item.y = at.getInt(2)

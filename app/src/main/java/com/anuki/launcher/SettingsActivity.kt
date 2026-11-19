@@ -70,7 +70,8 @@ class SettingsActivity : Activity() {
         }
         val tidyLeft = Tidy.undoDaysLeft(prefs)
         if (tidyLeft > 0) action("홈 화면 정리 되돌리기", "정리하기 전 배치로 돌아가요 · ${tidyLeft}일 남았어요") {
-            if (Tidy.undo(model, prefs)) this.toast("정리하기 전으로 되돌렸어요")
+            if (prefs.lockLayout) this.toast("홈 화면 배치 잠금을 먼저 풀어 주세요")
+            else if (Tidy.undo(model, prefs)) this.toast("정리하기 전으로 되돌렸어요")
             build()
         }
 

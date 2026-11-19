@@ -231,8 +231,12 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
         clipPath.addRoundRect(panel, radius, radius, Path.Direction.CW)
     }
 
+    /** Runs first in every frame, before anything is drawn (state that changes with time). */
+    protected open fun beforeDraw() {}
+
     override fun onDraw(c: Canvas) {
         if (panel.width() <= 0f || panel.height() <= 0f) return
+        beforeDraw()
         color = IconColors.current()
         val cx = headCx()
         CatParts.drawHead(c, context, expr(), color, cx, panel.top, u)
@@ -830,16 +834,19 @@ class FocusWidget(ctx: Context, item: HomeItem) : CatWidgetView(ctx, item) {
         drawLevel(c, 1f - left.toFloat() / CatWidgets.FOCUS_MS, cyanLevels())
     }
 
+    override fun beforeDraw() {
+        val end = endAt
+        if (end !in 1..System.currentTimeMillis()) return
+        // the session ended (maybe while nobody was looking): it counts for the day it ended, so not after midnight
+        val endDay = java.time.Instant.ofEpochMilli(end).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+        if (endDay == CatWidgets.today()) item.title = CatWidgets.withCount(CatWidgets.countToday(item.title) + 1)
+        item.provider = ""
+        post { LauncherApp.instance.model.save() }
+        LauncherApp.dlog("focus finished: ${CatWidgets.countToday(item.title)} today")
+    }
+
     override fun drawContent(c: Canvas) {
         val now = System.currentTimeMillis()
-        val end = endAt
-        if (end in 1..now) {
-            // the session ended while nobody was looking: count it
-            item.title = CatWidgets.withCount(CatWidgets.countToday(item.title) + 1)
-            item.provider = ""
-            LauncherApp.instance.model.save()
-            LauncherApp.dlog("focus finished: ${CatWidgets.countToday(item.title)} today")
-        }
         contentArea(area)
         if (area.width() <= 0f || area.height() <= 0f) return
         val count = CatWidgets.countToday(item.title)
