@@ -2147,12 +2147,16 @@ if open_settings_row "홈 화면 회전"; then
   echo "home (홈 화면 회전 켜짐): $(img_size shots/148-home-sideways.png)" >> $LOG
   adb logcat -d | grep -E "home orientation|desk icons|dock:" | tail -4 | tr -s ' ' | cut -d' ' -f6- >> $LOG
   echo "icons on the sideways home: $(ui shots/rot1.xml list | wc -l), at the right edge (dock): $(ui shots/rot1.xml list | awk '$(NF-1) > 2050' | wc -l)" >> $LOG
-  # the drawer uses the width: more columns
+  # the window reaches both edges (not stopping short of the camera cutout), the icons keep clear of it
+  echo "launcher window on the sideways screen: $(grep -o 'package="com.anuki.launcher"[^>]*bounds="[^"]*"' shots/rot1.xml | head -1 | grep -o 'bounds="[^"]*"')" >> $LOG
+  adb logcat -d | grep -E "insets:" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  # the drawer uses the width: more columns (swiped up inside the short screen)
   adb logcat -c
-  open_drawer
+  adb shell input swipe 1100 900 1100 200 200
+  sleep 3
   dump rot2
   shot 148b-drawer-sideways
-  echo "drawer icons in the top row: $(ui shots/rot2.xml list | awk '$NF > 250 && $NF < 600' | wc -l)" >> $LOG
+  echo "drawer icons in the fullest row: $(ui shots/rot2.xml list | awk '{c[$NF]++} END {m=0; for (k in c) if (c[k]>m) m=c[k]; print m}'), drawer open: $(grep -c '자주 쓰는 앱\|앱 검색' shots/rot2.xml)" >> $LOG
   adb shell input keyevent KEYCODE_BACK
   sleep 2
   # a folder opens inside the short screen

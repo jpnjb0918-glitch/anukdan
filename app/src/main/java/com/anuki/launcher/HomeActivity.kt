@@ -28,6 +28,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -66,6 +67,8 @@ class HomeActivity : Activity(), PagedView.Listener {
     private var boundVersion = -1
     private var insetTop = 0
     private var insetBottom = 0
+    /** The last insets logged (left, top, right, bottom), so a repeat is not logged again. */
+    private var lastInsets = IntArray(4) { -1 }
     private var popup: View? = null
     private var pendingWidgetId = -1
 
@@ -193,6 +196,14 @@ class HomeActivity : Activity(), PagedView.Listener {
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         }
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        // the camera cutout: on a sideways phone it is at the left or right edge, and without this the window stops
+        // short of it (a strip of bare wallpaper that the drawer and an open folder do not cover); the insets
+        // listener keeps the icons clear of it
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.also {
+                it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
     }
 
     private fun buildViews() {
@@ -231,11 +242,17 @@ class HomeActivity : Activity(), PagedView.Listener {
         })
 
         dragLayer.setOnApplyWindowInsetsListener { _, ins ->
-            @Suppress("DEPRECATION") val top = ins.systemWindowInsetTop
-            @Suppress("DEPRECATION") val bottom = ins.systemWindowInsetBottom
+            // the camera cutout counts too: on a sideways phone it is at the left or right edge
+            val cut = if (Build.VERSION.SDK_INT >= 28) ins.displayCutout else null
+            @Suppress("DEPRECATION") val top = maxOf(ins.systemWindowInsetTop, cut?.safeInsetTop ?: 0)
+            @Suppress("DEPRECATION") val bottom = maxOf(ins.systemWindowInsetBottom, cut?.safeInsetBottom ?: 0)
             // on a sideways phone the navigation buttons can sit at the left or right edge
-            @Suppress("DEPRECATION") val left = ins.systemWindowInsetLeft
-            @Suppress("DEPRECATION") val right = ins.systemWindowInsetRight
+            @Suppress("DEPRECATION") val left = maxOf(ins.systemWindowInsetLeft, cut?.safeInsetLeft ?: 0)
+            @Suppress("DEPRECATION") val right = maxOf(ins.systemWindowInsetRight, cut?.safeInsetRight ?: 0)
+            if (left != lastInsets[0] || top != lastInsets[1] || right != lastInsets[2] || bottom != lastInsets[3]) {
+                lastInsets = intArrayOf(left, top, right, bottom)
+                LauncherApp.dlog("insets: left $left top $top right $right bottom $bottom")
+            }
             insetTop = top; insetBottom = bottom
             home.setPadding(left, top, right, bottom)
             drawer.setInsets(top, bottom)
