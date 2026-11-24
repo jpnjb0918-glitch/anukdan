@@ -15,6 +15,7 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
@@ -49,6 +50,8 @@ class HomeActivity : Activity(), PagedView.Listener {
     lateinit var dropBar: DropBar
         private set
     private lateinit var column: LinearLayout
+    /** The pages and dock side by side: the pages column, and on a sideways phone the dock at its right. */
+    private lateinit var home: LinearLayout
     private lateinit var indicator: PageIndicator
     private lateinit var dockFrame: SwipeFrame
     private lateinit var drawer: AppDrawerView
@@ -200,7 +203,9 @@ class HomeActivity : Activity(), PagedView.Listener {
         movingBg = MovingWallpaper.Host(this)
         dragLayer.addView(movingBg, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
+        home = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        home.addView(column, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         workspace = PagedView(this).apply { listener = this@HomeActivity }
         // once the pages have their real size, icons that were sized from a guess are sized again
         workspace.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
@@ -213,10 +218,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         dock = CellLayout(this).apply { container = HomeItem.DOCK; rows = 1; cols = prefs.dockCount }
         dockFrame = SwipeFrame(this, { v -> onIconSwipeUp(v) }) { runAction(prefs.gestureUp, prefs.gestureUpApp) }
         dockFrame.addView(dock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        column.addView(dockFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, iconSize + dp(28f)).apply {
-            setMargins(dp(12f), dp(4f), dp(12f), dp(10f))
-        })
-        dragLayer.addView(column, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        arrangeDock()
+        dragLayer.addView(home, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         drawer = AppDrawerView(this)
         dragLayer.addView(drawer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -230,9 +233,13 @@ class HomeActivity : Activity(), PagedView.Listener {
         dragLayer.setOnApplyWindowInsetsListener { _, ins ->
             @Suppress("DEPRECATION") val top = ins.systemWindowInsetTop
             @Suppress("DEPRECATION") val bottom = ins.systemWindowInsetBottom
+            // on a sideways phone the navigation buttons can sit at the left or right edge
+            @Suppress("DEPRECATION") val left = ins.systemWindowInsetLeft
+            @Suppress("DEPRECATION") val right = ins.systemWindowInsetRight
             insetTop = top; insetBottom = bottom
-            column.setPadding(0, top, 0, bottom)
+            home.setPadding(left, top, right, bottom)
             drawer.setInsets(top, bottom)
+            drawer.setPadding(left, 0, right, 0)
             (dropBar.layoutParams as FrameLayout.LayoutParams).topMargin = top + dp(4f)
             dropBar.requestLayout()
             ins
@@ -344,7 +351,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         dock.cols = prefs.dockCount
         dock.rows = 1
         dockFrame.background = if (prefs.dockBackground) Palette.rounded(0x38FFFFFF, dp(28f).toFloat()) else null
-        (dockFrame.layoutParams as LinearLayout.LayoutParams).height = iconSize + dp(28f)
+        arrangeDock()
+        (dockFrame.layoutParams as LinearLayout.LayoutParams).let { if (sideDock) it.width = iconSize + dp(28f) else it.height = iconSize + dp(28f) }
         dockFrame.requestLayout()
 
         val homeLabels = prefs.homeLabels
@@ -383,6 +391,42 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     private var lastDeskIcon = 0
 
+    /** A phone on its side: short and wide (a tablet keeps its usual layout with the dock at the bottom). */
+    val sideways: Boolean
+        get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+            resources.configuration.smallestScreenWidthDp < 600
+
+    /** True while the dock stands down the right side ([sideways]). */
+    private var sideDock = false
+
+    /** The dock below the pages, or down their right side on a sideways phone (where the height is scarce). */
+    private fun arrangeDock() {
+        val side = sideways
+        if (side == sideDock && dockFrame.parent != null) return
+        sideDock = side
+        (dockFrame.parent as? ViewGroup)?.removeView(dockFrame)
+        dock.vertical = side
+        if (side) {
+            home.addView(dockFrame, LinearLayout.LayoutParams(iconSize + dp(28f), ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                setMargins(dp(4f), dp(12f), dp(10f), dp(12f))
+            })
+        } else {
+            column.addView(dockFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, iconSize + dp(28f)).apply {
+                setMargins(dp(12f), dp(4f), dp(12f), dp(10f))
+            })
+        }
+        LauncherApp.dlog("dock: ${if (side) "right side (sideways)" else "bottom"}")
+    }
+
+    /** App drawer columns: the chosen number, more on a sideways phone so the wide screen is used. */
+    fun drawerColumns(): Int = if (sideways) minOf(10, Math.round(prefs.drawerCols * 1.6f)) else prefs.drawerCols
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        arrangeDock()
+        if (apps.loaded) workspace.post { bindAll() }
+    }
+
     /** True when the home cells are too short for an icon and its name (e.g. a sideways screen): names are left out. */
     private var deskNoLabel = false
     private var boundNoLabel = false
@@ -390,9 +434,10 @@ class HomeActivity : Activity(), PagedView.Listener {
     /** Icon size on the home pages: the normal size, or smaller when the cells are too small for it. */
     private fun deskIconSize(): Int {
         val dm = resources.displayMetrics
-        val pageW = if (workspace.width > 0) workspace.width else dm.widthPixels
+        val pageW = if (workspace.width > 0) workspace.width
+        else dm.widthPixels - if (sideDock) iconSize + dp(42f) else 0
         val pageH = if (workspace.height > 0) workspace.height
-        else dm.heightPixels - insetTop - insetBottom - dp(18f) - (iconSize + dp(42f))
+        else dm.heightPixels - insetTop - insetBottom - dp(18f) - if (sideDock) 0 else iconSize + dp(42f)
         val cw = (pageW - dp(12f)) / prefs.homeCols.coerceAtLeast(1)
         val ch = (pageH - dp(8f)) / prefs.homeRows.coerceAtLeast(1)
         val label = if (prefs.homeLabels) IconView.labelLine(this, prefs.labelPx) + dp(4f) else 0f
@@ -798,7 +843,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         })
         dragLayer.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            setMargins(dp(16f), 0, dp(16f), insetBottom + dp(104f))
+            if (sideDock) setMargins(dp(16f), 0, dp(16f) + iconSize + dp(42f), insetBottom + dp(28f))
+            else setMargins(dp(16f), 0, dp(16f), insetBottom + dp(104f))
         })
         bar.alpha = 0f
         bar.animate().alpha(1f).setDuration(150).start()
@@ -843,8 +889,8 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     /** The drawer hides the home pages and dock while it is open, so a see-through drawer shows only the wallpaper. */
     fun setHomeContentVisible(visible: Boolean) {
-        column.animate().cancel()
-        column.animate().alpha(if (visible) 1f else 0f).setDuration(if (visible) 120L else 150L).start()
+        home.animate().cancel()
+        home.animate().alpha(if (visible) 1f else 0f).setDuration(if (visible) 120L else 150L).start()
     }
 
     private fun openFolder(item: HomeItem) {

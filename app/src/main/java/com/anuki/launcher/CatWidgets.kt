@@ -217,10 +217,17 @@ abstract class CatWidgetView(ctx: Context, val item: HomeItem) : View(ctx) {
     }
 
     /** Where the tile goes for this size (default: the whole cell under the cat). */
+    /** Widest the tile gets for its height: a wide, short cell (a sideways screen) gets a centred tile instead. */
+    protected open val maxAspect: Float get() = 1.6f * item.spanX / maxOf(1, item.spanY)
+
     protected open fun layoutTile(w: Int, h: Int) {
         val pad = dp(4f)
-        u = unitFor(w - 2 * pad)
-        panel.set(pad, pad + CatParts.EDGE * u, w - pad, h - pad)
+        val tw = min(w - 2 * pad, (h - 2 * pad) * maxAspect)
+        val left = (w - tw) / 2f
+        u = unitFor(tw)
+        // the cat on top takes at most 45 % of the height, so the tile itself never ends up a thin strip
+        if (CatParts.EDGE * u > (h - 2 * pad) * 0.45f) u = (h - 2 * pad) * 0.45f / CatParts.EDGE
+        panel.set(left, pad + CatParts.EDGE * u, left + tw, h - pad)
         radius = min(64f * 1.3f * u, panel.height() / 2)
     }
 

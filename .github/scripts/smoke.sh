@@ -2133,24 +2133,48 @@ sleep 4
 shot 147-home-after-sideways-app
 echo "home (홈 화면 회전 꺼짐): $(img_size shots/147-home-after-sideways-app.png)" >> $LOG
 adb logcat -d | grep -E "home orientation|desk icons" | tail -2 | tr -s ' ' | cut -d' ' -f6- >> $LOG
-# allowed to turn: the sideways home screen, icons inside their cells
+# allowed to turn: the sideways home screen, dock down the right side, icons inside their cells
 if open_settings_row "홈 화면 회전"; then
   adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_rotation" >> $LOG
-  adb logcat -c
+  adb shell settings put system user_rotation 0
   adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb logcat -c
+  adb shell settings put system user_rotation 1
   sleep 5
   dump rot1
   shot 148-home-sideways
   echo "home (홈 화면 회전 켜짐): $(img_size shots/148-home-sideways.png)" >> $LOG
-  adb logcat -d | grep -E "home orientation|desk icons" | tail -3 | tr -s ' ' | cut -d' ' -f6- >> $LOG
-  echo "icons on the sideways home: $(ui shots/rot1.xml list | wc -l)" >> $LOG
+  adb logcat -d | grep -E "home orientation|desk icons|dock:" | tail -4 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  echo "icons on the sideways home: $(ui shots/rot1.xml list | wc -l), at the right edge (dock): $(ui shots/rot1.xml list | awk '$(NF-1) > 2050' | wc -l)" >> $LOG
+  # the drawer uses the width: more columns
+  adb logcat -c
+  open_drawer
+  dump rot2
+  shot 148b-drawer-sideways
+  echo "drawer icons in the top row: $(ui shots/rot2.xml list | awk '$NF > 250 && $NF < 600' | wc -l)" >> $LOG
+  adb shell input keyevent KEYCODE_BACK
+  sleep 2
+  # a folder opens inside the short screen
+  FD=$(dump rot3; home_folder shots/rot3.xml)
+  echo "folder on the sideways home=$FD" >> $LOG
+  if [ -n "$FD" ]; then
+    adb shell input tap $FD
+    sleep 2
+    dump rot4
+    shot 148c-folder-sideways
+    echo "folder icons below the screen: $(ui shots/rot4.xml list | awk '$NF > 1080' | wc -l)" >> $LOG
+    adb shell input keyevent KEYCODE_BACK
+    sleep 1
+  fi
   # more rows, like a phone set to a big grid: still inside the cells
   adb shell settings put system user_rotation 0
   sleep 2
   set_slider "격자 행 수" 0.5556
-  adb shell settings put system user_rotation 1
-  adb logcat -c
   adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb logcat -c
+  adb shell settings put system user_rotation 1
   sleep 5
   shot 149-home-sideways-8-rows
   adb logcat -d | grep -E "desk icons" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG

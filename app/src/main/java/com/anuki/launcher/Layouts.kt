@@ -24,6 +24,15 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
     var container = HomeItem.DESKTOP
     var screen = 0
 
+    /**
+     * The grid turned a quarter: the logical columns run top to bottom (the dock down the side of a sideways
+     * screen). Callers keep using logical cells (x along the dock); only the drawing positions change.
+     */
+    var vertical = false
+        set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
+    private val physCols get() = if (vertical) rows else cols
+    private val physRows get() = if (vertical) cols else rows
+
     class LP(var cx: Int, var cy: Int, var sx: Int = 1, var sy: Int = 1) : ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
 
     /** highlight: x, y, spanX, spanY, mode (0 = place, 1 = merge into folder) */
@@ -41,21 +50,21 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
         clipToPadding = false
     }
 
-    val cellW: Int get() = maxOf(1, (width - paddingLeft - paddingRight) / cols)
-    val cellH: Int get() = maxOf(1, (height - paddingTop - paddingBottom) / rows)
+    val cellW: Int get() = maxOf(1, (width - paddingLeft - paddingRight) / physCols)
+    val cellH: Int get() = maxOf(1, (height - paddingTop - paddingBottom) / physRows)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         setMeasuredDimension(w, h)
-        val cw = maxOf(1, (w - paddingLeft - paddingRight) / cols)
-        val ch = maxOf(1, (h - paddingTop - paddingBottom) / rows)
+        val cw = maxOf(1, (w - paddingLeft - paddingRight) / physCols)
+        val ch = maxOf(1, (h - paddingTop - paddingBottom) / physRows)
         for (i in 0 until childCount) {
             val v = getChildAt(i)
             val lp = v.layoutParams as LP
             v.measure(
-                MeasureSpec.makeMeasureSpec(cw * lp.sx, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(ch * lp.sy, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(cw * (if (vertical) lp.sy else lp.sx), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(ch * (if (vertical) lp.sx else lp.sy), MeasureSpec.EXACTLY),
             )
         }
     }
@@ -65,8 +74,8 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
         for (i in 0 until childCount) {
             val v = getChildAt(i)
             val lp = v.layoutParams as LP
-            val x = paddingLeft + lp.cx * cw
-            val y = paddingTop + lp.cy * ch
+            val x = paddingLeft + (if (vertical) lp.cy else lp.cx) * cw
+            val y = paddingTop + (if (vertical) lp.cx else lp.cy) * ch
             v.layout(x, y, x + v.measuredWidth, y + v.measuredHeight)
         }
     }
@@ -77,6 +86,12 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
 
     /** Cell under a point in this view's coordinates, top-left aligned for the given span. */
     fun cellAt(x: Float, y: Float, sx: Int = 1, sy: Int = 1): IntArray {
+        if (vertical) {
+            // turned a quarter: across is the logical row, down is the logical column
+            val py = ((y - paddingTop) / cellH - (sx - 1) / 2f).toInt().coerceIn(0, maxOf(0, cols - sx))
+            val px = ((x - paddingLeft) / cellW - (sy - 1) / 2f).toInt().coerceIn(0, maxOf(0, rows - sy))
+            return intArrayOf(py, px)
+        }
         val cx = ((x - paddingLeft) / cellW - (sx - 1) / 2f).toInt().coerceIn(0, maxOf(0, cols - sx))
         val cy = ((y - paddingTop) / cellH - (sy - 1) / 2f).toInt().coerceIn(0, maxOf(0, rows - sy))
         return intArrayOf(cx, cy)
@@ -89,7 +104,8 @@ class CellLayout(ctx: Context) : ViewGroup(ctx) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        val h = highlight ?: return
+        val h0 = highlight ?: return
+        val h = if (vertical) intArrayOf(h0[1], h0[0], h0[3], h0[2], h0[4]) else h0
         val pad = dpx(4f)
         rect.set(
             paddingLeft + h[0] * cellW + pad, paddingTop + h[1] * cellH + pad,

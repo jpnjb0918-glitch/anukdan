@@ -200,13 +200,19 @@ class FolderView(private val act: HomeActivity) : FrameLayout(act) {
         val f = folder ?: return
         val items = act.model.folderContents(f.id)
         grid.removeAllViews()
-        grid.cols = when {
+        var cols = when {
             items.size <= 4 -> 2.coerceAtMost(maxOf(1, items.size))
             items.size <= 9 -> 3
             else -> 4
         }
         val size = act.iconSize
         grid.rowHeight = size + IconView.labelRowExtra(act, act.prefs.labelPx, 34f)
+        // a short screen (a phone on its side): more columns, so every row fits without running off the screen
+        val dm = act.resources.displayMetrics
+        val maxRows = maxOf(1, (dm.heightPixels - act.dp(170f)) / grid.rowHeight)
+        val maxCols = maxOf(1, (dm.widthPixels - act.dp(56f)) / act.dp(78f))
+        if ((items.size + cols - 1) / cols > maxRows) cols = ((items.size + maxRows - 1) / maxRows).coerceAtMost(maxCols)
+        grid.cols = cols
         for (it in items) {
             val app = act.apps.find(it.key) ?: continue
             val v = act.makeAppIcon(app, it, DragInfo.SRC_FOLDER, labels = true, onPanel = true)
@@ -528,7 +534,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             "categories" -> fillGroups(list.groupBy { Categories.of(it) }, Categories.ORDER, showIndex = false)
             "list" -> fillGrid(list, cols = 1, row = true,
                 rowH = maxOf((act.iconSize * 0.78f).toInt(), IconView.labelLine(act, act.prefs.labelPx, true).toInt()) + act.dp(14f))
-            else -> fillGrid(list, cols = act.prefs.drawerCols, rowH = rowHeight(), row = false)
+            else -> fillGrid(list, cols = act.drawerColumns(), rowH = rowHeight(), row = false)
         }
     }
 
@@ -570,7 +576,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
             }
             headers[k] = h
             stack.addView(h, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-            val g = newGrid(act.prefs.drawerCols, rowHeight())
+            val g = newGrid(act.drawerColumns(), rowHeight())
             for (app in groups.getValue(k)) g.addView(newIcon(app, false))
             stack.addView(g, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         }
@@ -578,7 +584,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     }
 
     private fun fillSuggest(searching: Boolean) {
-        val cols = act.prefs.drawerCols
+        val cols = act.drawerColumns()
         val hidden = act.prefs.hidden
         val top = if (!act.prefs.drawerSuggest || searching || tabIndex != 0) emptyList() else
             act.apps.all.filter { it.key !in hidden && act.prefs.launchCount(it.key) > 0 }
@@ -663,7 +669,7 @@ class AppDrawerView(private val act: HomeActivity) : FrameLayout(act) {
     private fun fillPages(list: List<AppEntry>) {
         val avail = pager.height - pager.paddingBottom
         if (avail <= 0) { post { refresh() }; return }
-        val cols = act.prefs.drawerCols
+        val cols = act.drawerColumns()
         val rowH = rowHeight()
         val rows = maxOf(1, (avail - act.dp(8f)) / rowH)
         val per = cols * rows
