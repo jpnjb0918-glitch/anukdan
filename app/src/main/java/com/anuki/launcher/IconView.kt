@@ -116,17 +116,25 @@ class IconView(ctx: Context) : View(ctx) {
             drawBadge(canvas)
             return
         }
-        val total = iconSize + if (showLabel && label.isNotEmpty()) labelHeight() + dp(4f) else 0f
+        // the icon never draws past its own cell: in a short cell (a sideways screen, many rows) it shrinks,
+        // and when that would leave it under 60 % of its size the name is left out to make room
+        var labelOn = showLabel && label.isNotEmpty()
+        val room = height - dp(4f)
+        val lineH = labelHeight() + dp(4f)
+        if (labelOn && iconSize + lineH > room && room - lineH < iconSize * 0.6f) labelOn = false
+        val size = minOf(iconSize.toFloat(), if (labelOn) room - lineH else room, width - dp(4f))
+            .coerceAtLeast(minOf(iconSize.toFloat(), dp(16f)))
+        val total = size + if (labelOn) lineH else 0f
         val top = ((height - total) / 2f).coerceAtLeast(0f)
-        val left = (width - iconSize) / 2f
-        dst.set(left, top, left + iconSize, top + iconSize)
+        val left = (width - size) / 2f
+        dst.set(left, top, left + size, top + size)
         icon?.let { canvas.drawBitmap(it, null, dst, iconPaint) }
 
-        if (showLabel && label.isNotEmpty()) {
+        if (labelOn) {
             val text = TextUtils.ellipsize(label, textPaint, width - dp(6f), TextUtils.TruncateAt.END).toString()
             textPaint.color = labelColor
             if (labelShadow) textPaint.setShadowLayer(dp(2f), 0f, dp(1f), 0xAA000000.toInt()) else textPaint.clearShadowLayer()
-            canvas.drawText(text, width / 2f, top + iconSize + dp(4f) - textPaint.ascent(), textPaint)
+            canvas.drawText(text, width / 2f, top + size + dp(4f) - textPaint.ascent(), textPaint)
         }
         drawBadge(canvas)
     }
@@ -139,7 +147,7 @@ class IconView(ctx: Context) : View(ctx) {
     private fun drawBadge(canvas: Canvas) {
         if (badge > 0 && badgeStyle != "off") {
             if (badgeStyle == "count") {
-                val r = iconSize * 0.17f
+                val r = dst.width() * 0.17f
                 val cx = dst.right - r * 0.55f
                 val cy = dst.top + r * 0.55f
                 canvas.drawCircle(cx, cy, r, badgeFill)
@@ -148,7 +156,7 @@ class IconView(ctx: Context) : View(ctx) {
                 val t = if (badge > 99) "99+" else badge.toString()
                 canvas.drawText(t, cx, cy - (badgeText.ascent() + badgeText.descent()) / 2f, badgeText)
             } else {
-                val r = iconSize * 0.11f
+                val r = dst.width() * 0.11f
                 val cx = dst.right - r
                 val cy = dst.top + r
                 canvas.drawCircle(cx, cy, r, badgeFill)

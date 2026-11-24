@@ -65,6 +65,7 @@ class SettingsActivity : Activity() {
         switch("무한 스크롤", "마지막 페이지에서 넘기면 첫 페이지로 돌아가요", prefs.infiniteScroll) { prefs.infiniteScroll = it }
         switch("상태 표시줄 숨기기", "홈 화면에서 시계·배터리 줄을 숨겨요 (위 끝에서 쓸어내리면 잠깐 보여요)", prefs.hideStatusBar) { prefs.hideStatusBar = it }
         choice("페이지 넘김 효과", PageEffects.ALL, prefs.pageEffect) { prefs.pageEffect = it }
+        switch("홈 화면 회전", "휴대폰을 옆으로 돌리면 홈 화면도 가로로 돌아가요 · 끄면 항상 세로 (태블릿은 늘 돌아가요)", prefs.homeRotation) { prefs.homeRotation = it }
         action("홈 화면 정리", "홈 화면의 앱을 종류별 폴더(게임·소셜·사진 등)로 묶어요 · 바뀌는 모습을 먼저 보여 줘요") {
             if (prefs.lockLayout) this.toast("홈 화면 배치 잠금을 먼저 풀어 주세요") else Tidy.ask(this) { build() }
         }

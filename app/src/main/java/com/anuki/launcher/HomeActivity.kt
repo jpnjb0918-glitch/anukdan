@@ -12,6 +12,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -78,6 +79,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyOrientation()
         setupWindow()
         widgetManager = AppWidgetManager.getInstance(this)
         widgetHost = AnukiWidgetHost(this)
@@ -161,6 +163,7 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     override fun onResume() {
         super.onResume()
+        applyOrientation()
         applyStatusBar()
         movingBg.apply(MovingWallpaper.launcherValue(this))
         movingBg.onHomeVisible(true)
@@ -201,7 +204,8 @@ class HomeActivity : Activity(), PagedView.Listener {
         workspace = PagedView(this).apply { listener = this@HomeActivity }
         // once the pages have their real size, icons that were sized from a guess are sized again
         workspace.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
-            if ((r - l != orr - ol || b - t != ob - ot) && apps.loaded && deskIconSize() != lastDeskIcon) workspace.post { bindAll() }
+            if ((r - l != orr - ol || b - t != ob - ot) && apps.loaded &&
+                (deskIconSize() != lastDeskIcon || deskNoLabel != boundNoLabel)) workspace.post { bindAll() }
         }
         column.addView(workspace, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         indicator = PageIndicator(this)
@@ -346,12 +350,15 @@ class HomeActivity : Activity(), PagedView.Listener {
         val homeLabels = prefs.homeLabels
         val desk = deskIconSize()
         lastDeskIcon = desk
+        boundNoLabel = deskNoLabel
+        if (LauncherApp.debug) LauncherApp.dlog("desk icons: $desk of $iconSize px, names ${if (deskNoLabel) "off" else "on"}, " +
+            "page ${workspace.width}x${workspace.height}, grid ${prefs.homeCols}x${prefs.homeRows}")
         for (item in model.items) {
             if (item.container >= 0) continue // lives inside a folder
             val onDesktop = item.container == HomeItem.DESKTOP
             val v: View = when (item.type) {
-                HomeItem.TYPE_APP -> apps.find(item.key)?.let { makeAppIcon(it, item, sourceOf(item), onDesktop && homeLabels, false) }
-                HomeItem.TYPE_FOLDER -> makeFolderIcon(item, onDesktop && homeLabels)
+                HomeItem.TYPE_APP -> apps.find(item.key)?.let { makeAppIcon(it, item, sourceOf(item), onDesktop && homeLabels && !deskNoLabel, false) }
+                HomeItem.TYPE_FOLDER -> makeFolderIcon(item, onDesktop && homeLabels && !deskNoLabel)
                 HomeItem.TYPE_WIDGET -> if (onDesktop) makeWidgetView(item) else null
                 HomeItem.TYPE_CAT_WIDGET -> if (onDesktop) makeCatWidget(item) else null
                 else -> null
@@ -376,6 +383,10 @@ class HomeActivity : Activity(), PagedView.Listener {
 
     private var lastDeskIcon = 0
 
+    /** True when the home cells are too short for an icon and its name (e.g. a sideways screen): names are left out. */
+    private var deskNoLabel = false
+    private var boundNoLabel = false
+
     /** Icon size on the home pages: the normal size, or smaller when the cells are too small for it. */
     private fun deskIconSize(): Int {
         val dm = resources.displayMetrics
@@ -385,7 +396,9 @@ class HomeActivity : Activity(), PagedView.Listener {
         val cw = (pageW - dp(12f)) / prefs.homeCols.coerceAtLeast(1)
         val ch = (pageH - dp(8f)) / prefs.homeRows.coerceAtLeast(1)
         val label = if (prefs.homeLabels) IconView.labelLine(this, prefs.labelPx) + dp(4f) else 0f
-        val fit = minOf((cw * 0.88f).toInt(), (ch - label - dp(8f)).toInt())
+        // a cell too short for the icon and its name together: rather a bigger icon without the name
+        deskNoLabel = label > 0f && ch - label - dp(8f) < iconSize * 0.6f && ch - label - dp(8f) < cw * 0.88f
+        val fit = minOf((cw * 0.88f).toInt(), (ch - (if (deskNoLabel) 0f else label) - dp(8f)).toInt())
         return fit.coerceIn(dp(20f), maxOf(dp(20f), iconSize))
     }
 
@@ -955,6 +968,20 @@ class HomeActivity : Activity(), PagedView.Listener {
         entries += MenuEntry("런처 설정") { startActivity(Intent(this, SettingsActivity::class.java)) }
         dragLayer.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         showPopupAt(Rect(rawX.toInt(), rawY.toInt(), rawX.toInt(), rawY.toInt()), entries)
+    }
+
+    /**
+     * 홈 화면 회전: on a phone the home screen stays upright unless the setting allows turning (coming home from a
+     * sideways video no longer leaves a squeezed sideways home screen); a tablet always turns.
+     */
+    private fun applyOrientation() {
+        val tablet = resources.configuration.smallestScreenWidthDp >= 600
+        val want = if (prefs.homeRotation || tablet) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        if (requestedOrientation != want) {
+            requestedOrientation = want
+            LauncherApp.dlog("home orientation: ${if (want == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) "portrait" else "follows the phone"}")
+        }
     }
 
     private fun undoTidy() {

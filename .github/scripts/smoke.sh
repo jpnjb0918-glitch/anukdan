@@ -2115,6 +2115,57 @@ if open_settings_row "홈 버튼 (첫 페이지에서)"; then
   sleep 2
 fi
 
+step "가로 화면 (홈 화면 회전 꺼짐: 세로 그대로, 켜짐: 아이콘이 칸 안에 들어가는지)"
+# a PNG's size from its header (no extra Python packages on the runner)
+img_size() { python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(24); w,h=struct.unpack('>II',d[16:24]); print(f'{w}x{h}', 'landscape' if w>h else 'portrait')" "$1" 2>/dev/null; }
+ACC0=$(adb shell settings get system accelerometer_rotation | tr -d '\r')
+ROT0=$(adb shell settings get system user_rotation | tr -d '\r')
+adb shell settings put system accelerometer_rotation 0
+# a sideways app first (like a video), then home
+adb shell settings put system user_rotation 1
+adb shell am start -W -a android.intent.action.VIEW -d "https://example.com" com.android.chrome >/dev/null 2>&1
+sleep 4
+shot 146-app-sideways
+echo "app screen: $(img_size shots/146-app-sideways.png)" >> $LOG
+adb logcat -c
+adb shell input keyevent KEYCODE_HOME
+sleep 4
+shot 147-home-after-sideways-app
+echo "home (홈 화면 회전 꺼짐): $(img_size shots/147-home-after-sideways-app.png)" >> $LOG
+adb logcat -d | grep -E "home orientation|desk icons" | tail -2 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+# allowed to turn: the sideways home screen, icons inside their cells
+if open_settings_row "홈 화면 회전"; then
+  adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_rotation" >> $LOG
+  adb logcat -c
+  adb shell input keyevent KEYCODE_HOME
+  sleep 5
+  dump rot1
+  shot 148-home-sideways
+  echo "home (홈 화면 회전 켜짐): $(img_size shots/148-home-sideways.png)" >> $LOG
+  adb logcat -d | grep -E "home orientation|desk icons" | tail -3 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  echo "icons on the sideways home: $(ui shots/rot1.xml list | wc -l)" >> $LOG
+  # more rows, like a phone set to a big grid: still inside the cells
+  adb shell settings put system user_rotation 0
+  sleep 2
+  set_slider "격자 행 수" 0.5556
+  adb shell settings put system user_rotation 1
+  adb logcat -c
+  adb shell input keyevent KEYCODE_HOME
+  sleep 5
+  shot 149-home-sideways-8-rows
+  adb logcat -d | grep -E "desk icons" | tail -1 | tr -s ' ' | cut -d' ' -f6- >> $LOG
+  adb shell settings put system user_rotation 0
+  sleep 2
+  set_slider "격자 행 수" 0.3333
+  # back to always upright
+  if open_settings_row "홈 화면 회전"; then sleep 1; fi
+  adb shell run-as com.anuki.launcher cat shared_prefs/anuki.xml | grep -E "home_rotation|home_rows" >> $LOG
+fi
+adb shell settings put system user_rotation ${ROT0:-0}
+adb shell settings put system accelerometer_rotation ${ACC0:-0}
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+
 step "standard build (no badge service) installs over it and runs"
 adb install -r "$STD_APK" 2>&1 | tee -a $LOG
 adb shell dumpsys package com.anuki.launcher | grep -E "versionName|BadgeService" | head -5 >> $LOG

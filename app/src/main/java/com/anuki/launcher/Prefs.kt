@@ -44,6 +44,7 @@ class Prefs(ctx: Context) {
     var autoAddApps by boolPref("auto_add_apps", false)       // 새로 설치한 앱을 홈 화면에 추가
     var infiniteScroll by boolPref("infinite_scroll", false)  // 마지막 페이지 다음은 첫 페이지
     var pageEffect by strPref("page_effect", "")              // 페이지 넘김 효과, see PageEffects
+    var homeRotation by boolPref("home_rotation", false)      // 홈 화면 회전 (꺼짐: 휴대폰에서는 항상 세로)
     var hideStatusBar by boolPref("hide_status_bar", false)
     var searchContacts by boolPref("search_contacts", false)  // 앱 서랍 검색에 연락처
     var lockHidden by boolPref("lock_hidden", false)          // 숨긴 앱은 지문·PIN 뒤에
